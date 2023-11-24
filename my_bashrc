@@ -1,0 +1,165 @@
+export LESS=-R
+export PATH=~/WORKSPACE/20230825_fix_axis_bug_get_all_commits/jorek_merge/util/:$PATH
+
+#ulimit -s unlimited
+#ulimit -m unlimited
+
+## Compile commands
+# ./util/config.sh model=710 n_tor=1 n_period=1 n_plane=1 && make clean && make cleanall && make -j 8 && mv jorek_model710 jorek_model710_ntor1
+# ./util/config.sh model=710 n_tor=5 n_period=1 n_plane=8 && make clean && make cleanall && make -j 8 && make -j 8 jorek2vtk jorek2_postproc jorek2_poincare q_fmhd
+
+alias rm="rm -i"
+alias lsr="ls -lrt"
+alias gv="gv -antialias"
+alias myquota="/usr/lpp/mmfs/bin/mmlsquota --block-size auto"
+alias gitResetPushedCommit='git reset --soft HEAD~1'
+alias sq_cd_jobid='source ~/scripts/slurm_dir.sh '
+alias plot_live_data='plot_live_data.sh'
+
+# alias mysq="squeue -u $USER"
+# alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%30,state,start,end,elapsed,nnodes,WorkDir%180 | grep "$USER " | grep "RUNNING\|PENDING"'
+alias sqdir='scontrol show job | grep "WorkDir=$WORKDIR"'
+alias mysq="squeue -o '%.29j %.10i %.8M %.3D %.1T %.17r %.8u' -u $USER"
+alias sqhist='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%30,state,start,end,elapsed,nnodes,WorkDir%180 | grep "$USER "'
+alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%20,state,WorkDir%180 | grep "$USER " | grep "RUNNING\|PENDING"'
+
+alias jorekShowSteps="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
+alias bpeek="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
+alias tailf='tail logfile -f | grep -e "time step :" -e "Elapsed time ITERATION" -e "min,max deltas  ="'
+
+alias cpXfiles='find ./ -maxdepth 1 -type f -perm /a+x | xargs cp -t ' # followed by target path
+alias renameH5='rename jorek0 jorek jorek0?????.h5'
+alias stopJorek='touch STOP_NOW'
+
+alias reg_cases_ls='reg_tests/run_test.sh -l'
+alias reg_case_comp_and_run='reg_tests/run_test.sh -j 8 '
+alias reg_case_compile='reg_tests/run_test.sh -p -j 8 '
+alias reg_case_run='reg_tests/run_test.sh -k -n '
+alias reg_clean_all='reg_tests/cleanup.sh'
+
+alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1s/^#//' postproc/exprs_averaged_s*.dat && sed -i '/^#/d' postproc/qprofile_s*.dat'
+alias jorek_post2='sed -i '1s/^#//' ' # remove first # in first line in postproc/exprs_averaged_s*.dat 
+alias jorek_post3='sed -i '/^#/d' ' # remove first line start with # in postproc/qprofile_s*.dat
+
+alias cvt2vtkno0='convert2vtk.sh -no0 -j 8 jorek2vtk '
+alias cvt2vtk='convert2vtk.sh -j 8 jorek2vtk '
+
+cvt2vtk_itor() {
+  local itor="$1"
+  local input="$2"
+  convert2vtk.sh -i_tor "$itor" -j 8 jorek2vtk "$input"
+}
+cvt2vtk_iplane() {
+  local ip="$1"
+  local input="$2"
+  convert2vtk.sh -i_plane "$ip" -j 8 jorek2vtk "$input"
+}
+cvt2vtkno0_iplane() {
+  local ip="$1"
+  local input="$2"
+  convert2vtk.sh -i_plane "$ip" -no0 -j 8 jorek2vtk "$input"
+}
+cvt2vtk_itor_iplane() {
+  local itor="$1"
+  local ip="$2"
+  local input="$3"
+  convert2vtk.sh -i_tor "$itor" -i_plane "$ip" -j 8 jorek2vtk "$input"
+}
+
+jorek_post_all() {
+  unset id ids sorted_ids unique_ids ids_exist file_id
+  # Check if an ID was provided as a parameter
+  if [ -n "$1" ]; then
+    #id="$1"  # Use the provided ID
+    # for id in "$@"; do
+    #   echo "post_porcessing: $id"
+    #   sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' ~/scripts/postproc_script.txt
+    #   ./jorek2_postproc < ~/scripts/postproc_script.txt > postproc.log
+    # done
+    ids=("$@")
+  else
+    # Extract IDs and store them in an array
+    ids=($(find ./ -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    # ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
+    ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+  fi
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
+
+  # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
+  for id in "${sorted_ids[@]}"; do
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
+      unique_ids+=("$id")
+    fi
+  done
+
+  mkdir ~/scripts/tmp_postproc
+
+  # Loop through the IDs and replace them in postproc_script.txt
+  for id in "${unique_ids[@]}"; do
+    echo "post_porcessing: $id"
+    file_id=~/scripts/tmp_postproc/"postproc_script_$id.txt"
+    cp ~/scripts/postproc_script.txt $file_id
+    sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' $file_id
+    ./jorek2_postproc < $file_id > postproc.log
+  done
+
+  sed -i '1s/^#//' postproc/exprs_averaged_s*.dat
+  sed -i '1s/^#//' postproc/exprs_midplane_s*.dat
+  sed -i '/^#/d' postproc/qprofile_s*.dat
+  
+  unset id ids sorted_ids unique_ids ids_exist file_id
+}
+
+# alias sbatch_dep='sbatch --dependency=afterok:' # e.g., sbatch --dependency=afterok:<first_job_id> my_second_job.sh # rok means run ok (succes)
+sbatch_dep_job() {
+  local first_job_id="$1"
+  local script_name="$2"
+  sbatch --dependency=afterok:"$first_job_id" "$script_name"
+}
+
+make_jorek() {
+  unset pfix underscore ext origin_file new_file
+  local usage="Usage: make_jorek [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
+  local description="This function compiles executable files for specified model and parameters."
+  local help_text="$usage\n$description"
+  if [ $# -eq 0 ]; then
+    echo -e "$help_text"
+    echo "Example: make_jorek 710 5 1 8"
+    return
+  fi
+
+  local para_model="$1"
+  local para_ntor="$2"
+  local para_nperiod="$3"
+  local para_nplane="$4"
+  pfix="jorek_model"
+  underscore="_"
+  ext="$underscore$para_ntor$underscore$para_nperiod$underscore$para_nplane"
+
+  origin_file="$pfix$para_model"
+  new_file="$pfix$para_model$ext"
+   
+  ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
+  make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd
+  mv "$origin_file" "$new_file" && make install
+  unset pfix underscore ext origin_file new_file
+}
+
+function sbatch_chain() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: qsubchain jobscript1 jobscript2 [...]"
+    return
+  fi
+  
+  thejobids=""
+  depend=""
+  while [ $# -gt 0 ]; do
+    thejobid=`sbatch $depend $1 | sed -e 's/Submitted batch job *//'`
+    thejobids="$thejobids $thejobid"
+    depend="--dependency=afterok:$thejobid"
+    shift
+  done
+  echo "JobIDs: $thejobids"
+  unset depend thejobid thejobids
+}
+
