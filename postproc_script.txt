@@ -15,3 +15,13 @@ mark_coords 1
 for step 94000 do
     midplane
 done
+
+for step 94000 do
+    find_q_surface -1.0
+    find_q_surface -1.1
+    find_q_surface -1.5
+    find_q_surface -2.0
+    find_q_surface -3.0
+    find_q_surface -4.0
+    find_q_surface -5.0
+done
