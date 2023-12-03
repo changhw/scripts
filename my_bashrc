@@ -112,13 +112,6 @@ jorek_post_all() {
   unset id ids sorted_ids unique_ids ids_exist file_id
 }
 
-# alias sbatch_dep='sbatch --dependency=afterok:' # e.g., sbatch --dependency=afterok:<first_job_id> my_second_job.sh # rok means run ok (succes)
-sbatch_dep_job() {
-  local first_job_id="$1"
-  local script_name="$2"
-  sbatch --dependency=afterok:"$first_job_id" "$script_name"
-}
-
 make_jorek() {
   unset pfix underscore ext origin_file new_file
   local usage="Usage: make_jorek [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
@@ -147,6 +140,19 @@ make_jorek() {
   unset pfix underscore ext origin_file new_file
 }
 
+# alias sbatch_dep='sbatch --dependency=afterok:' # e.g., sbatch --dependency=afterok:<first_job_id> my_second_job.sh # rok means run ok (succes)
+sbatch_dep_job() {
+  local first_job_id="$1"
+  local script_name="$2"
+  sbatch --dependency=afterok:"$first_job_id" "$script_name"
+}
+
+sbatch_dep_job_any() {
+  local first_job_id="$1"
+  local script_name="$2"
+  sbatch --dependency=afternotok:"$first_job_id" "$script_name"
+}
+
 function sbatch_chain() {
   if [ $# -lt 2 ]; then
     echo "Usage: qsubchain jobscript1 jobscript2 [...]"
@@ -165,3 +171,21 @@ function sbatch_chain() {
   unset depend thejobid thejobids
 }
 
+
+function sbatch_chain_any() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: qsubchain jobscript1 jobscript2 [...]"
+    return
+  fi
+  
+  thejobids=""
+  depend=""
+  while [ $# -gt 0 ]; do
+    thejobid=`sbatch $depend $1 | sed -e 's/Submitted batch job *//'`
+    thejobids="$thejobids $thejobid"
+    depend="--dependency=afternotok:$thejobid"
+    shift
+  done
+  echo "JobIDs: $thejobids"
+  unset depend thejobid thejobids
+}
