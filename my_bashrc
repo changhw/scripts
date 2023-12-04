@@ -112,6 +112,62 @@ jorek_post_all() {
   unset id ids sorted_ids unique_ids ids_exist file_id
 }
 
+jorek_poincare_all() {
+  unset id ids sorted_ids unique_ids ids_exist input_file_name
+  mkdir poincares
+
+  while [[ $# -gt 0 ]]; do
+      case "$1" in
+          -fn)
+              if [ -n "$2" ]; then
+                  input_file_name="$2"
+                  shift 2
+              else
+                  echo "Error: Missing argument for -fn flag (the input file)."
+                  exit 1
+              fi
+              ;;
+          *)
+              # Capture other parameters in the 'ids' array
+              ids+=("$1")
+              shift
+              ;;
+      esac
+  done
+
+  # Check if an ID was provided as a parameter
+  # if [ -n "$1" ]; then
+  #   ids=("$@")
+  # else
+  if [ ${#ids[@]} -gt 0 ]; then
+    echo "Ids is not empty: ${ids[@]}"
+  else
+    # Extract IDs and store them in an array
+    ids=($(find ./ -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    ids_exist=($(find ./poincares/ -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+  fi
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
+
+  # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
+  for id in "${sorted_ids[@]}"; do
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
+      unique_ids+=("$id")
+    fi
+  done
+
+  # Loop through the IDs
+  for id in "${unique_ids[@]}"; do
+    echo "poincare_porcessing file: jorek$id.h5"
+    cp "jorek$id.h5" jorek_restart.h5
+    ./jorek2_poincare < $input_file_name > poincare.log
+    echo "Finished, moving poinc_*.dat to poincares/"
+    mv poinc_R-Z.dat "poincares/poinc_R-Z_s$id.dat"
+    mv poinc_rho-theta.dat "poincares/poinc_rho-theta_s$id.dat"
+  done
+
+  unset id ids sorted_ids unique_ids ids_exist input_file_name
+}
+
 make_jorek() {
   unset pfix underscore ext origin_file new_file
   local usage="Usage: make_jorek [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
