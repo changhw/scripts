@@ -27,6 +27,7 @@ alias watchsq='watch -n 1 squeue -u $USER'
 alias jorekShowSteps="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
 alias bpeek="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
 alias tailf='tail logfile -f | grep -e "time step :" -e "Elapsed time ITERATION" -e "min,max deltas  =" -e "Elapsed time in construct " -e "Number of iterations" -e "After step "'
+alias llh='du -h --max-depth=1 | sort -h'
 
 alias cpXfiles='find ./ -maxdepth 1 -type f -perm /a+x | xargs cp -t ' # followed by target path
 alias renameH5='rename jorek0 jorek jorek0?????.h5'
