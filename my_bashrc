@@ -40,6 +40,7 @@ alias reg_case_compile='reg_tests/run_test.sh -p -j 8 '
 alias reg_case_run='reg_tests/run_test.sh -k -n '
 alias reg_clean_all='reg_tests/cleanup.sh'
 
+alias time2si="time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')"
 alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1s/^#//' postproc/exprs_averaged_s*.dat && sed -i '/^#/d' postproc/qprofile_s*.dat'
 alias jorek_post2='sed -i '1s/^#//' ' # remove first # in first line in postproc/exprs_averaged_s*.dat 
 alias jorek_post3='sed -i '/^#/d' ' # remove first line start with # in postproc/qprofile_s*.dat
