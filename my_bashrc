@@ -165,6 +165,7 @@ jorek_poincare_all() {
     echo "Finished, moving poinc_*.dat to poincares/"
     mv poinc_R-Z.dat "poincares/poinc_R-Z_s$id.dat"
     mv poinc_rho-theta.dat "poincares/poinc_rho-theta_s$id.dat"
+    mv poincare.ps "poincares/poincare$id.ps"
   done
 
   unset id ids sorted_ids unique_ids ids_exist input_file_name
