@@ -160,7 +160,7 @@ jorek_poincare_all() {
   # Loop through the IDs
   for id in "${unique_ids[@]}"; do
     echo "poincare_porcessing file: jorek$id.h5"
-    cp "jorek$id.h5" jorek_restart.h5
+    cp "jorek$id.h5" jorek_poincare.h5
     ./jorek2_poincare < $input_file_name > poincare.log
     echo "Finished, moving poinc_*.dat to poincares/"
     mv poinc_R-Z.dat "poincares/poinc_R-Z_s$id.dat"
