@@ -40,7 +40,7 @@ alias reg_case_compile='reg_tests/run_test.sh -p -j 8 '
 alias reg_case_run='reg_tests/run_test.sh -k -n '
 alias reg_clean_all='reg_tests/cleanup.sh'
 
-alias time2si="time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')"
+#alias time2si="time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')"
 alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1s/^#//' postproc/exprs_averaged_s*.dat && sed -i '/^#/d' postproc/qprofile_s*.dat'
 alias jorek_post2='sed -i '1s/^#//' ' # remove first # in first line in postproc/exprs_averaged_s*.dat 
 alias jorek_post3='sed -i '/^#/d' ' # remove first line start with # in postproc/qprofile_s*.dat
@@ -70,6 +70,14 @@ cvt2vtk_itor_iplane() {
   convert2vtk.sh -i_tor "$itor" -i_plane "$ip" -j 8 jorek2vtk "$input"
 }
 
+# Define a function to echo array elements
+print_array() {
+    local array=("$@")  # Receive the array as arguments
+    for element in "${array[@]}"; do
+        echo "$element"
+    done
+}
+
 jorek_post_all() {
   unset id ids sorted_ids unique_ids ids_exist file_id
   # Check if an ID was provided as a parameter
@@ -84,6 +92,7 @@ jorek_post_all() {
   else
     # Extract IDs and store them in an array
     ids=($(find ./ -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
     ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
@@ -247,4 +256,8 @@ function sbatch_chain_any() {
   done
   echo "JobIDs: $thejobids"
   unset depend thejobid thejobids
+}
+
+time2si() {
+  time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')
 }
