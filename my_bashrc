@@ -25,7 +25,7 @@ alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%20,state,W
 alias watchsq='watch -n 1 squeue -u $USER'
 
 alias jorekShowSteps="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
-alias bpeek="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
+#alias bpeek="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
 alias tailf='tail logfile -f | grep -e "time step :" -e "Elapsed time ITERATION" -e "min,max deltas  =" -e "Elapsed time in construct " -e "Number of iterations" -e "After step "'
 alias llh='du -h --max-depth=1 | sort -h'
 
@@ -91,10 +91,10 @@ jorek_post_all() {
     ids=("$@")
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
     # print_array "${ids[@]}"
-    # ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
-    ids_exist=($(find ./postproc/ -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+    # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
+    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
   sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
@@ -105,16 +105,31 @@ jorek_post_all() {
     fi
   done
 
-  mkdir ~/scripts/tmp_postproc
+  # Counter for active threads
+  active_threads=0
+  # Maximum number of threads in parallel
+  max_threads=5  # Adjust based on your preference
 
+  mkdir ~/scripts/tmp_postproc
   # Loop through the IDs and replace them in postproc_script.txt
   for id in "${unique_ids[@]}"; do
-    echo "post_porcessing: $id"
-    file_id=~/scripts/tmp_postproc/"postproc_script_$id.txt"
-    cp ~/scripts/postproc_script.txt $file_id
-    sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' $file_id
-    ./jorek2_postproc < $file_id > postproc.log
+	# Check if the maximum number of threads is reached
+    if [ "$active_threads" -ge "$max_threads" ]; then
+		# Wait for one background process to finish
+		wait
+        active_threads=0
+    fi
+
+    echo "post_porcessing: $id" && \
+    file_id=~/scripts/tmp_postproc/"postproc_script_$id.txt" && \
+    cp ~/scripts/postproc_script.txt $file_id && \
+    sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' $file_id && \
+    ./jorek2_postproc < $file_id > postproc.log &
+
+	((active_threads++))
   done
+
+  wait
 
   sed -i '1s/^#//' postproc/exprs_averaged_s*.dat
   sed -i '1s/^#//' postproc/exprs_midplane_s*.dat
@@ -154,8 +169,8 @@ jorek_poincare_all() {
     echo "Ids is not empty: ${ids[@]}"
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
-    ids_exist=($(find ./poincares/ -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    ids_exist=($(find ./poincares/ -maxdepth 1 -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
   sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
@@ -260,4 +275,19 @@ function sbatch_chain_any() {
 
 time2si() {
   time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')
+}
+
+bpeek() {
+  if [ -n "$1" ]; then
+    filename="$1"
+  else
+    filename=logfile
+  fi
+
+  egrep -i 'info\(2|time iterat|time step :|min,max deltas' $filename
+}
+
+stopJorekAfterHours() {
+    time="$1"
+	echo "touch STOP_NOW" | at now + $time hours
 }

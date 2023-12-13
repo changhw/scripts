@@ -1,4 +1,4 @@
-namelist input_ntor1
+namelist input
 set surfaces 200
 !           0     1  2   3   4    5           6    7
 expressions Psi_N ne T_i T_e pres FFprime_loc VXBt VXBt_all
