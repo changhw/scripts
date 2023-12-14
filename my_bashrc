@@ -51,23 +51,47 @@ alias cvt2vtk='convert2vtk.sh -j 8 jorek2vtk '
 cvt2vtk_itor() {
   local itor="$1"
   local input="$2"
-  convert2vtk.sh -i_tor "$itor" -j 8 jorek2vtk "$input"
+  if [ -n "$3" ]; then
+    local only="$3"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -i_tor "$itor" -only "$only" -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -i_tor "$itor" -j 8 jorek2vtk "$input"
+  fi
 }
 cvt2vtk_iplane() {
   local ip="$1"
   local input="$2"
-  convert2vtk.sh -i_plane "$ip" -j 8 jorek2vtk "$input"
+  if [ -n "$3" ]; then
+    local only="$3"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -i_plane "$ip" -only "$only" -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -i_plane "$ip" -j 8 jorek2vtk "$input"
+  fi
 }
 cvt2vtkno0_iplane() {
   local ip="$1"
   local input="$2"
-  convert2vtk.sh -i_plane "$ip" -no0 -j 8 jorek2vtk "$input"
+  if [ -n "$3" ]; then
+    local only="$3"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -i_plane "$ip" -only "$only" -no0 -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -i_plane "$ip" -no0 -j 8 jorek2vtk "$input"
+  fi
 }
 cvt2vtk_itor_iplane() {
   local itor="$1"
   local ip="$2"
   local input="$3"
-  convert2vtk.sh -i_tor "$itor" -i_plane "$ip" -j 8 jorek2vtk "$input"
+  if [ -n "$4" ]; then
+    local only="$4"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -i_tor "$itor" -i_plane "$ip" -only "$only" -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -i_tor "$itor" -i_plane "$ip" -j 8 jorek2vtk "$input"
+  fi
 }
 
 # Define a function to echo array elements
