@@ -41,6 +41,8 @@ alias reg_case_compile='reg_tests/run_test.sh -p -j 8 '
 alias reg_case_run='reg_tests/run_test.sh -k -n '
 alias reg_clean_all='reg_tests/cleanup.sh'
 
+alias live_data='plot_live_data -noplot'
+
 #alias time2si="time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')"
 alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1s/^#//' postproc/exprs_averaged_s*.dat && sed -i '/^#/d' postproc/qprofile_s*.dat'
 alias jorek_post2='sed -i '1s/^#//' ' # remove first # in first line in postproc/exprs_averaged_s*.dat 
@@ -321,3 +323,5 @@ stopJorekAfterHours() {
 # plot_q_versus_time.py -xm $time2si -xl "time [ms]" -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_f_versus_time.py -xm $time2si -fn exprs_midplane -yc 7 -xl "time [ms]" -clim -0.0000001 0.0000001 # -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_VxB_tor.py -np 32 -ns 43200 vtk_no0_iplane # -xylim 1.20 2.00 -0.20 0.30
+# for i in {1..32}; do cvt2vtkno0_iplane $i input 40000; done
+# rsync -aAXv 20230825_fix_axis_bug_get_all_commits --exclude={"*.vtk"} toki02jump:/u/hazh/WORKSPACE/MarconiSync/  #Ref: https://tecadmin.net/backup-linux-system/
