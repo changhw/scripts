@@ -41,7 +41,7 @@ alias reg_case_compile='reg_tests/run_test.sh -p -j 8 '
 alias reg_case_run='reg_tests/run_test.sh -k -n '
 alias reg_clean_all='reg_tests/cleanup.sh'
 
-alias live_data='plot_live_data -noplot'
+alias live_data='plot_live_data -noplot && time2si'
 
 #alias time2si="time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')"
 alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1s/^#//' postproc/exprs_averaged_s*.dat && sed -i '/^#/d' postproc/qprofile_s*.dat'
