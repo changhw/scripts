@@ -3,8 +3,8 @@ namelist input_ntor1
 ! namelist in_sawtooth_ntor1.dat
 set surfaces 200
 !           0     1  2   3   4    5           6    7
-expressions Psi_N ne T_i T_e pres FFprime_loc VXBt VXBt_all
-! expressions Psi_N ne T pres FFprime_loc VXBt VXBt_all
+expressions Psi_N ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor
+! expressions Psi_N ne T pres FFprime_loc VXBt VXBt_all Jtor
 for step 94000 do
     average
     qprofile
@@ -13,8 +13,8 @@ done
 
 set linepoints 400
 !           0     1  2   3   4    5           6    7
-expressions R ne T_i T_e pres FFprime_loc VXBt VXBt_all
-! expressions R ne T pres FFprime_loc VXBt VXBt_all
+expressions R ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor
+! expressions R ne T pres FFprime_loc VXBt VXBt_all Jtor
 mark_coords 1
 for step 94000 do
     midplane
