@@ -1,0 +1,9 @@
+namelist input_ntor1
+! namelist input
+! namelist in_sawtooth_ntor1.dat
+!           0     1  2   3   4    5           6    7
+for step 0 to 1000000 do
+    !           0 1   2   3   4     5    6        7  8  9    10  11  12
+    expressions t A_R A_Z A_3 eta_T VXBt VXBt_all BR BZ Btor rho T_i T_e 
+    point 1.8 0.0 0.0
+done

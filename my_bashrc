@@ -106,6 +106,11 @@ print_array() {
     done
 }
 
+jorek_post_time() {
+  ./jorek2_postproc < ~/scripts/postproc_script_time_series.txt 
+  sed -i '1s/^#//' postproc/exprs_at*.dat
+}
+
 jorek_post_all() {
   unset id ids sorted_ids unique_ids ids_exist file_id
   # Check if an ID was provided as a parameter
