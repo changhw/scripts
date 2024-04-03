@@ -112,6 +112,8 @@ jorek_post_time() {
 }
 
 jorek_post_all() {
+  live_data
+  live_data -q ti
   unset id ids sorted_ids unique_ids ids_exist file_id
   # Check if an ID was provided as a parameter
   if [ -n "$1" ]; then
