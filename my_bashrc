@@ -333,7 +333,7 @@ bpeek() {
     filename=logfile
   fi
 
-  egrep -i 'info\(2|time iterat|time step :|min,max deltas' $filename
+  egrep --text -i 'info\(2|time iterat|time step :|min,max deltas' $filename
 }
 
 stopJorekAfterHours() {
