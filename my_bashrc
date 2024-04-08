@@ -74,6 +74,20 @@ cvt2vtk_iplane() {
     convert2vtk.sh -i_plane "$ip" -j 8 jorek2vtk "$input"
   fi
 }
+
+cvt2vtk_iplane_nsub() {
+  local ip="$1"
+  local nsub="$2"
+  local input="$3"
+  if [ -n "$4" ]; then
+    local only="$4"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -i_plane "$ip" -nsub "$nsub" -only "$only" -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -i_plane "$ip" -nsub "$nsub" -j 8 jorek2vtk "$input"
+  fi
+}
+
 cvt2vtkno0_iplane() {
   local ip="$1"
   local input="$2"
