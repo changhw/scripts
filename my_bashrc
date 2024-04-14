@@ -125,6 +125,28 @@ jorek_post_time() {
   sed -i '1s/^#//' postproc/exprs_at*.dat
 }
 
+jorek_post_count() {
+    local directory="$1"
+    
+    # Check if directory is provided, otherwise use current directory
+    if [ -z "$directory" ]; then
+		directory="postproc/"
+    fi
+    # Count files with the specified prefix
+    local prefix="fluxsurfaces_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+	echo "Find $count ${prefix}* files."
+    local prefix="qprofile_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+	echo "Find $count ${prefix}* files."
+    local prefix="exprs_averaged_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+	echo "Find $count ${prefix}* files."
+    local prefix="exprs_midplane_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+	echo "Find $count ${prefix}* files."
+}
+
 jorek_post_all() {
   live_data
   live_data -q ti
@@ -143,7 +165,10 @@ jorek_post_all() {
     ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
     # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
-    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+#    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+#    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'fluxsurfaces_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
+#    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'qprofile_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
   sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
@@ -373,5 +398,6 @@ n_plane_from_n_tor() {
 # plot_q_versus_time.py -xm $time2si -xl "time [ms]" -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_f_versus_time.py -xm $time2si -fn exprs_midplane -yc 7 -xl "time [ms]" -clim -0.0000001 0.0000001 # -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_VxB_tor.py -np 32 -ns 43200 vtk_no0_iplane # -xylim 1.20 2.00 -0.20 0.30
+# plot_multiple_files.py energies.dat -sk 1 -ys log -xm $time2si -xl "time[ms]" -yl "normalized energies" -ti "normilized energies vs time"
 # for i in {1..32}; do cvt2vtkno0_iplane $i input 40000; done
 # rsync -aAXv 20230825_fix_axis_bug_get_all_commits --exclude={"*.vtk"} toki02jump:/u/hazh/WORKSPACE/MarconiSync/  #Ref: https://tecadmin.net/backup-linux-system/
