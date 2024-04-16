@@ -1,0 +1,10 @@
+&four_params
+nstpts = 100 ! number of psi_N values
+nmaxsteps = 2000
+deltaphi = 0.2
+nsmallsteps = 3
+rad_range = 0.001, 0.999
+nTht = 120
+n_cut = 4
+m_cut = 12
+/

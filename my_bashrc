@@ -394,6 +394,72 @@ n_plane_from_n_tor() {
     done
 }
 
+jorek_four_all() {
+  live_data
+  live_data -q ti
+  unset id ids sorted_ids unique_ids ids_exist file_id input_file_name
+  while [[ $# -gt 0 ]]; do
+      case "$1" in
+          -fn)
+              if [ -n "$2" ]; then
+                  input_file_name="$2"
+                  shift 2
+              else
+                  echo "Error: Missing argument for -fn flag (the input file)."
+                  exit 1
+              fi
+              ;;
+          *)
+              # Capture other parameters in the 'ids' array
+              ids+=("$1")
+              shift
+              ;;
+      esac
+  done
+  # Check if an ID was provided as a parameter
+  if [ ${#ids[@]} -gt 0 ]; then
+    echo "Ids is not empty: ${ids[@]}"
+  else
+    # Extract IDs and store them in an array
+    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    # print_array "${ids[@]}"
+	ids_exist=($(find ./four_results/ -maxdepth 1 -type f -name 'Uphi_n000_m000_step*' | grep -oE 'step[0-9]+' | sed 's/step//'))
+  fi
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
+
+  # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
+  for id in "${sorted_ids[@]}"; do
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
+      unique_ids+=("$id")
+    fi
+  done
+
+  # Counter for active threads
+  active_threads=0
+  # Maximum number of threads in parallel
+  max_threads=1  # Adjust based on your preference
+
+  # Loop through the IDs and replace them in postproc_script.txt
+  for id in "${unique_ids[@]}"; do
+	# Check if the maximum number of threads is reached
+    if [ "$active_threads" -ge "$max_threads" ]; then
+		# Wait for one background process to finish
+		wait
+        active_threads=0
+    fi
+
+    echo "four_porcessing: $id" && \
+    cp "jorek$id.h5" jorek_four.h5
+	./jorek2_four < ./${input_file_name} > four_logfile
+
+	((active_threads++))
+  done
+
+  wait
+
+  unset id ids sorted_ids unique_ids ids_exist file_id
+}
+
 # useful commands
 # plot_q_versus_time.py -xm $time2si -xl "time [ms]" -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_f_versus_time.py -xm $time2si -fn exprs_midplane -yc 7 -xl "time [ms]" -clim -0.0000001 0.0000001 # -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
