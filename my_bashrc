@@ -292,7 +292,7 @@ make_jorek() {
   new_file="$pfix$para_model$ext"
    
   ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
-  make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd
+  make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag
   mv "$origin_file" "$new_file" && make install
   unset pfix underscore ext origin_file new_file
 }
