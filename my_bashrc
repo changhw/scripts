@@ -25,6 +25,7 @@ alias mysq="squeue -o '%.29j %.10i %.8q %.8M %.3D %.3L %.1T %.17r %.8u' -u $USER
 alias sqhist='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%30,state,start,end,elapsed,nnodes,WorkDir%180 | grep "$USER "'
 alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%20,state,WorkDir%180 | grep "$USER " | grep "RUNNING\|PENDING"'
 alias watchsq='watch -n 1 squeue -u $USER'
+alias sqmemory='sacct -a --format=user%10,jobname%30,node%10,start%20,end%20,elapsed%10,MaxRSS -j'
 
 alias jorekShowSteps="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
 #alias bpeek="egrep -i 'info\(2|time iterat|time step :|min,max deltas' logfile"
@@ -469,3 +470,5 @@ jorek_four_all() {
 # plot_fft_1D_time_series.py four_results/1D_U_radial_n001_m002_vs_time_at_rhop_eq_0.30.dat -sk 1 -yc 2
 # for i in {1..32}; do cvt2vtkno0_iplane $i input 40000; done
 # rsync -aAXv 20230825_fix_axis_bug_get_all_commits --exclude={"*.vtk"} toki02jump:/u/hazh/WORKSPACE/MarconiSync/  #Ref: https://tecadmin.net/backup-linux-system/
+# git checkout -b bugfix/ffprime_integration
+# git push -u origin bugfix/ffprime_integration
