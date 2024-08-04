@@ -33,7 +33,8 @@ alias tailf='tail logfile -f | grep -e "time step :" -e "Elapsed time ITERATION"
 alias llh='du -h --max-depth=1 | sort -h'
 
 alias cpXfiles='find ./ -maxdepth 1 -type f -perm /a+x | xargs cp -t ' # followed by target path
-alias renameH5='rename jorek0 jorek jorek0?????.h5'
+alias renameH5_to_short='rename jorek0 jorek jorek0?????.h5'
+alias renameH5_to_long='rename jorek jorek0 jorek?????.h5'
 alias stopJorek='touch STOP_NOW'
 alias outputJorek='touch OUTPUT_NOW'
 
