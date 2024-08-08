@@ -184,7 +184,7 @@ jorek_post_all() {
   # Counter for active threads
   active_threads=0
   # Maximum number of threads in parallel
-  max_threads=5  # Adjust based on your preference
+  max_threads=10  # Adjust based on your preference
 
   mkdir ~/scripts/tmp_postproc
   # Loop through the IDs and replace them in postproc_script.txt
