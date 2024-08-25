@@ -147,6 +147,8 @@ jorek_post_count() {
     local prefix="exprs_midplane_s"
     local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
+    local count=$(find ./ -type f -name "jorek*.h5" | wc -l)
+        echo "Find $count jorek*.h5 files."
 }
 
 jorek_post_all() {
@@ -461,6 +463,35 @@ jorek_four_all() {
 
   unset id ids sorted_ids unique_ids ids_exist file_id
 }
+
+# Function to update the time limit of a SLURM job
+update_slurm_time() {
+    # Check if correct number of arguments is provided
+    if [ "$#" -ne 2 ]; then
+        echo "Usage: update_slurm_time <jobid> <new_time_limit>"
+        echo "Example: update_slurm_time 12345 03:00:00"
+        return 1
+    fi
+
+    # Assign variables
+    local jobid="$1"
+    local new_time_limit="$2"
+
+    # Update the time limit using scontrol
+    scontrol update jobid=$jobid TimeLimit=$new_time_limit
+
+    # Check if the command was successful
+    if [ $? -eq 0 ]; then
+        echo "Time limit for job $jobid updated to $new_time_limit."
+    else
+        echo "Failed to update time limit for job $jobid."
+        return 1
+    fi
+}
+
+# Usage example:
+# update_slurm_time 12345 03:00:00
+
 
 # useful commands
 # plot_q_versus_time.py -xm $time2si -xl "time [ms]" -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
