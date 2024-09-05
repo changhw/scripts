@@ -147,7 +147,7 @@ jorek_post_count() {
     local prefix="exprs_midplane_s"
     local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
-    local count=$(find ./ -type f -name "jorek*.h5" | wc -l)
+    local count=$(find ./ -maxdepth 1 -type f -name "jorek*.h5" | wc -l)
         echo "Find $count jorek*.h5 files."
 }
 
