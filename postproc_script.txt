@@ -5,8 +5,8 @@ namelist input_ntor1
 set surfaces 200
 !           0     1  2 3    4           5    6        7    8     9      10           11
 !expressions Psi_N ne T pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00
-!           0     1  2   3   4    5           6    7        8    9     10     11           12     13      14          15        16       17        18           19       20     21         22          23         24        
-expressions Psi_N ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00 VXBt_R2 VXBt_all_R2 VXBt00_R2 etaJt_R2 etaSJt_R2 etaJminSJ_R2 gradPsi2 lapPsi rho_comprs rho_convect rho_diffus rho_source
+!           0     1  2   3   4    5           6    7        8    9     10     11           12     13      14          15        16       17        18           19       20     21         22          23         24         25          26         27          28        29           30      31         32
+expressions Psi_N ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00 VXBt_R2 VXBt_all_R2 VXBt00_R2 etaJt_R2 etaSJt_R2 etaJminSJ_R2 gradPsi2 lapPsi rho_comprs rho_convect rho_diffus rho_source myVnablaV_r myDiv_BB_r myNablaB2_r myGradP_r myViscTerm_r myJxB_r JxB_radial V_radial
 for step 49000 do
     average
     qprofile
@@ -16,8 +16,8 @@ done
 set linepoints 400
 !           0     1  2 3    4           5    6        7    8     9      10           11
 !expressions Psi_N ne T pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00
-!           0 1  2   3   4    5           6    7        8    9     10     11           12     13      14          15        16       17        18           19       20     21         22          23         24         
-expressions R ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00 VXBt_R2 VXBt_all_R2 VXBt00_R2 etaJt_R2 etaSJt_R2 etaJminSJ_R2 gradPsi2 lapPsi rho_comprs rho_convect rho_diffus rho_source 
+!           0 1  2   3   4    5           6    7        8    9     10     11           12     13      14          15        16       17        18           19       20     21         22          23         24         25          26         27          28        29           30      31         32
+expressions R ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00 VXBt_R2 VXBt_all_R2 VXBt00_R2 etaJt_R2 etaSJt_R2 etaJminSJ_R2 gradPsi2 lapPsi rho_comprs rho_convect rho_diffus rho_source myVnablaV_r myDiv_BB_r myNablaB2_r myGradP_r myViscTerm_r myJxB_r JxB_radial V_radial
 mark_coords 1
 for step 49000 do
     midplane
