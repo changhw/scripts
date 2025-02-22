@@ -370,6 +370,17 @@ stopJorekAfterHours() {
 	echo "touch STOP_NOW" | at now + $time hours
 }
 
+stopJorekAfterHoursMins() {
+    time1="$1"  # hours
+    time2="$2"  # minutes
+
+    # Calculate the total time in minutes
+    total_minutes=$((time1 * 60 + time2))
+
+    # Schedule the task using 'at' with the calculated time
+    echo "touch STOP_NOW" | at now + $total_minutes minutes
+}
+
 stopJorekAfterMins() {
     time="$1"
 	echo "touch STOP_NOW" | at now + $time minutes
