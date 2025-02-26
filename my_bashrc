@@ -365,10 +365,10 @@ bpeek() {
   egrep --text -i 'info\(2|time iterat|time step :|min,max deltas' $filename
 }
 
-stopJorekAfterHours() {
-    time="$1"
-	echo "touch STOP_NOW" | at now + $time hours
-}
+#stopJorekAfterHours() {
+#    time="$1"
+#	echo "touch STOP_NOW" | at now + $time hours
+#}
 
 stopJorekAfterHoursMins() {
     time1="$1"  # hours
@@ -381,10 +381,10 @@ stopJorekAfterHoursMins() {
     echo "touch STOP_NOW" | at now + $total_minutes minutes
 }
 
-stopJorekAfterMins() {
-    time="$1"
-	echo "touch STOP_NOW" | at now + $time minutes
-}
+#stopJorekAfterMins() {
+#    time="$1"
+#	echo "touch STOP_NOW" | at now + $time minutes
+#}
 
 n_MPI_from_n_tor() {
     local n_tor=$1
