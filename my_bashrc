@@ -386,6 +386,20 @@ stopJorekAfterHoursMins() {
 #	echo "touch STOP_NOW" | at now + $time minutes
 #}
 
+stopJorekAfterHoursMinsCron() {
+    time1="$1"  # hours
+    time2="$2"  # minutes
+
+    # Calculate the execution time
+    target_time=$(date -d "$time1 hours $time2 minutes" "+%M %H %d %m *")
+
+    # Add the task to crontab
+    (crontab -l 2>/dev/null; echo "$target_time touch $PWD/STOP_NOW") | crontab -
+
+    echo "Task scheduled: 'STOP_NOW' will be created in $time1 hours and $time2 minutes."
+}
+
+
 n_MPI_from_n_tor() {
     local n_tor=$1
     # Iterate over k from 1 to 10
