@@ -1,6 +1,7 @@
 export LESS=-R
 export PATH=~/WORKSPACE/20230825_fix_axis_bug_get_all_commits/jorek_merge/util/:$PATH
 export PATH=~/scripts/bin/:$PATH
+export PATH=~/scripts/screenFetch:$PATH
 
 #ulimit -s unlimited
 #ulimit -m unlimited
@@ -54,6 +55,8 @@ alias jorek_post3='sed -i '/^#/d' ' # remove first line start with # in postproc
 
 alias cvt2vtkno0='convert2vtk.sh -no0 -j 8 jorek2vtk '
 alias cvt2vtk='convert2vtk.sh -j 8 jorek2vtk '
+alias cvt2vtkno0si='convert2vtk.sh -no0 -si -j 8 jorek2vtk '
+alias cvt2vtksi='convert2vtk.sh -si -j 8 jorek2vtk '
 
 cvt2vtk_itor() {
   local itor="$1"
@@ -209,6 +212,12 @@ jorek_post_all() {
   done
 
   wait
+
+  for id in "${unique_ids[@]}"; do
+    echo "cleaning up: $id"
+    file_id=~/scripts/tmp_postproc/"postproc_script_$id.txt"
+    rm $file_id -f
+  done
 
   sed -i '1s/^#//' postproc/exprs_averaged_s*.dat
   sed -i '1s/^#//' postproc/exprs_midplane_s*.dat
