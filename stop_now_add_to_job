@@ -1,0 +1,27 @@
+#!/bin/bash -l
+# ....
+#SBATCH --time=48:00:00            #Wall clock limit
+
+
+# Extract time from SLURM script ("$0" => this)
+TIME_STRING=$(grep -oP '(?<=#SBATCH --time=)[0-9:-]+' "$0")
+
+# Convert to seconds
+IFS=':' read -ra TIME_PARTS <<< "$TIME_STRING"
+if [ ${#TIME_PARTS[@]} -eq 3 ]; then
+    # HH:MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 3600 + 10#${TIME_PARTS[1]} * 60 + 10#${TIME_PARTS[2]}))
+elif [ ${#TIME_PARTS[@]} -eq 2 ]; then
+    # MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 60 + 10#${TIME_PARTS[1]}))
+else
+    TIME_IN_SECONDS=0
+fi
+
+( sleep $(( $TIME_IN_SECONDS - 300 )); touch STOP_NOW ) &
+
+echo "TIME_STRING: $TIME_STRING"
+echo "Time limit in seconds: $TIME_IN_SECONDS"
+
+# Run the program:
+srun jorek_model711_9_1_16 < input | tee logfile
