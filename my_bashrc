@@ -13,6 +13,7 @@ export PATH=~/scripts/screenFetch:$PATH
 alias rm="rm -i"
 alias lsr="ls -lrt"
 alias gv="gv -antialias"
+alias myrsync="rsync -aAXvP"
 alias myquota="/usr/lpp/mmfs/bin/mmlsquota --block-size auto"
 alias gitResetPushedCommit='git reset --soft HEAD~1'
 alias sqcdjobid='source ~/scripts/slurm_dir.sh '
@@ -78,6 +79,18 @@ cvt2vtk_iplane() {
     convert2vtk.sh -i_plane "$ip" -only "$only" -j 8 jorek2vtk "$input"
   else
     convert2vtk.sh -i_plane "$ip" -j 8 jorek2vtk "$input"
+  fi
+}
+
+cvt2vtksi_iplane() {
+  local ip="$1"
+  local input="$2"
+  if [ -n "$3" ]; then
+    local only="$3"
+    echo "Only processing nsteps of: "$only
+    convert2vtk.sh -si -i_plane "$ip" -only "$only" -j 8 jorek2vtk "$input"
+  else
+    convert2vtk.sh -si -i_plane "$ip" -j 8 jorek2vtk "$input"
   fi
 }
 
