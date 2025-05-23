@@ -248,6 +248,7 @@ jorek_post_all() {
   sed -i '1s/^#//' postproc/exprs_averaged_s*.dat
   sed -i '1s/^#//' postproc/exprs_midplane_s*.dat
   sed -i '1s/^#//' postproc/int3Dprofile_s*.dat
+  sed -i '1s/^#//' postproc/exprs_surface_flux_s*.dat
   sed -i '/^#/d' postproc/qprofile_s*.dat
   
   unset id ids sorted_ids unique_ids ids_exist file_id

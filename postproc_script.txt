@@ -66,8 +66,14 @@ done
 !  9.949748743718594E-01, -6.309133434135009E+00,  -7.033335088784463E+00,
 
 
-! expressions volume area Ip_in
-! for step 49000 do
-!     int3Dprofile
-!     RZ_flux_surface
-! done
+!expressions volume area Ip_in Heat_srcin_e Heat_srcin_i
+!for step 49000 do
+!    int3Dprofile
+!    RZ_flux_surface
+!done
+
+
+!expressions Psi_N grad_psi_R grad_psi_Z grad_Ti_R grad_Ti_Z
+!for step 49000 do
+!    int2D_fluxsurface
+!done
