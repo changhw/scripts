@@ -578,6 +578,8 @@ export one_over_u0=795774.7154594767  # 1/u0
 # plot_fft_1D_time_series.py four_results/1D_U_radial_n001_m002_vs_time_at_rhop_eq_0.30.dat -sk 1 -yc 2
 # plot_midplane_vtk.py vtk_iplane -np 16 -va n_charge_SI -ns 200000 -clim ' -2.1e+10' 2.1e+10 -tm $time2si -ef True
 # for i in {1..32}; do cvt2vtkno0_iplane $i input 40000; done
+# for i in {1..16}; do cvt2vtk_iplane $i input; done
 # rsync -aAXv 20230825_fix_axis_bug_get_all_commits --exclude={"*.vtk"} toki02jump:/u/hazh/WORKSPACE/MarconiSync/  #Ref: https://tecadmin.net/backup-linux-system/
 # git checkout -b bugfix/ffprime_integration
 # git push -u origin bugfix/ffprime_integration
+# jorek_four_all -fn input
