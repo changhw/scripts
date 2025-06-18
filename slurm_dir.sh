@@ -12,9 +12,9 @@ job_id_to_find="$1"
 # job_info=$(scontrol show job $job_id_to_find | grep WorkDir)
 # project_path=$(echo "$job_info" | sed 's/WorkDir=//') #$(echo "$job_info" | awk '{print $NF}')
 
-sacct --starttime 2023-08-09 --format=User,JobID,Jobname%10,state,start,end,elapsed,nnodes,WorkDir%300 | grep "$USER $job_id_to_find"
+sacct --starttime 2023-08-09 --format=User,JobID,Jobname%10,state,start,end,elapsed,nnodes,WorkDir%500 | grep "$USER $job_id_to_find"
 
-job_info=$(sacct --starttime 2023-08-09 --format=User,JobID,WorkDir%300 | grep "$USER $job_id_to_find")
+job_info=$(sacct --starttime 2023-08-09 --format=User,JobID,WorkDir%500 | grep "$USER $job_id_to_find")
 job_info=$(echo "$job_info" | sed s/$USER//)
 job_info="${job_info#*[0-9] }"
 project_path="${job_info// /}"
