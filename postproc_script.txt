@@ -31,6 +31,10 @@ for step 49000 do
     midplane
 done
 
+!for step 49000 do
+!    int2d
+!done
+
  for step 49000 do
     find_q_surface -1.0
     find_q_surface -1.1
@@ -65,7 +69,8 @@ done
 !  8.994974874371859E-01, -4.665270925583930E+00,  -4.340120016263127E+00,
 !  9.949748743718594E-01, -6.309133434135009E+00,  -7.033335088784463E+00,
 
-!expressions volume area Ip_in Heat_srcin_e Heat_srcin_i
+!set surfaces 100
+!expressions volume area Ip_in Heat_srcin_e Heat_srcin_i beta_t beta_p beta_n
 !for step 49000 do
 !    int3Dprofile
 !    RZ_flux_surface
