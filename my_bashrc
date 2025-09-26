@@ -55,6 +55,10 @@ alias jorek_post='./jorek2_postproc < ~/scripts/postproc_script.txt && sed -i '1
 alias jorek_post2='sed -i '1s/^#//' ' # remove first # in first line in postproc/exprs_averaged_s*.dat 
 alias jorek_post3='sed -i '/^#/d' ' # remove first line start with # in postproc/qprofile_s*.dat
 
+alias touch_all_folder_file='find . -exec touch {} +'
+alias touch_all_file='find . -type f -exec touch {} +'
+alias touch_all_folder='find . -type d -exec touch {} +'
+
 # Function to set more_outfile_digits to false
 set_more_outfile_digits_false() {
     sed -i 's/^more_outfile_digits=true/more_outfile_digits=false/' ~/jorek/util/convert2vtk.sh
