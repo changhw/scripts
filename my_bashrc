@@ -40,6 +40,7 @@ alias cpXfiles='find ./ -maxdepth 1 -type f -perm /a+x | xargs cp -t ' # followe
 alias renameH5_to_short='rename jorek0 jorek jorek0?????.h5'
 alias renameH5_to_long='rename jorek jorek0 jorek?????.h5'
 alias stopJorek='touch STOP_NOW'
+alias luJorek='touch REDO_LU'
 alias outputJorek='touch OUTPUT_NOW'
 
 alias reg_cases_ls='reg_tests/run_test.sh -l'
