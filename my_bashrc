@@ -1,6 +1,6 @@
 #!/bin/bash
 export LESS=-R
-export PATH=~/WORKSPACE/20230825_fix_axis_bug_get_all_commits/jorek_merge/util/:$PATH
+export PATH=~/jorek/util/:$PATH
 export PATH=~/scripts/bin/:$PATH
 export PATH=~/scripts/screenFetch:$PATH
 
