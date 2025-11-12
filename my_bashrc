@@ -257,6 +257,8 @@ jorek_post_all() {
   sed -i '1s/^#//' postproc/exprs_surface_flux_s*.dat
   sed -i '/^#/d' postproc/qprofile_s*.dat
   
+  cp ~/scripts/postproc_script.txt postproc/
+  
   unset id ids sorted_ids unique_ids ids_exist file_id
 }
 
@@ -692,6 +694,7 @@ export one_over_u0=795774.7154594767  # 1/u0
 # plot_VxB_tor.py -np 32 -ns 43200 vtk_no0_iplane # -xylim 1.20 2.00 -0.20 0.30
 # plot_multiple_files.py energies.dat -sk 1 -ys log -xm $time2si -xl "time[ms]" -yl "normalized energies" -ti "normalized energies vs time"
 # plot_mn_mode_structures.py four_results -va rho T_e -nl 1 2 -ml 1 2 3 23 -st 02000 04000 -tm $time2si #-me al -ex True -er 0.3
+# plot_multiple_files.py four_results/U_radial_n001_m001_step000400 -sk 1 -xp 0.5 -yc 1 2 3 -le 'abs' 're' 'im'
 # plot_fft_1D_time_series.py four_results/1D_U_radial_n001_m002_vs_time_at_rhop_eq_0.30.dat -sk 1 -yc 2
 # plot_midplane_vtk.py vtk_iplane -np 16 -va n_charge_SI -ns 200000 -clim ' -2.1e+10' 2.1e+10 -tm $time2si -ef True
 # for i in {1..32}; do cvt2vtkno0_iplane $i input 40000; done
