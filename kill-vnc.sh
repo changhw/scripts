@@ -1,3 +1,3 @@
 #!/bin/bash
 cd ~
-vncserver -kill :75
+vncserver -kill :79

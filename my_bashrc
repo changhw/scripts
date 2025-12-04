@@ -392,6 +392,35 @@ jorek_poincare_all() {
   unset id ids sorted_ids unique_ids ids_exist input_file_name
 }
 
+make_jorek_kinetic() {
+  unset pfix underscore ext origin_file new_file
+  local usage="Usage: make_jorek_kinetic [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
+  local description="This function compiles executable files for specified model and parameters."
+  local help_text="$usage\n$description"
+  if [ $# -eq 0 ]; then
+    echo -e "$help_text"
+    echo "Example: make_jorek 710 5 1 8"
+    return
+  fi
+
+  local para_model="$1"
+  local para_ntor="$2"
+  local para_nperiod="$3"
+  local para_nplane="$4"
+  pfix="jorek_model"
+  underscore="_"
+  ext="$underscore$para_ntor$underscore$para_nperiod$underscore$para_nplane"
+
+  origin_file="$pfix$para_model"
+  new_file="$pfix$para_model$ext"
+   
+  ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
+  make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag kinetic_main #q_fmhd_3D
+  mv "$origin_file" "$new_file" && make install
+  cp models/model$para_model/mod_elt_matrix_fft.f90 bin/
+  unset pfix underscore ext origin_file new_file
+}
+
 make_jorek() {
   unset pfix underscore ext origin_file new_file
   local usage="Usage: make_jorek [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
