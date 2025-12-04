@@ -409,10 +409,15 @@ make_jorek_kinetic() {
   local para_nplane="$4"
   pfix="jorek_model"
   underscore="_"
+  numone="1"
   ext="$underscore$para_ntor$underscore$para_nperiod$underscore$para_nplane"
 
   origin_file="$pfix$para_model"
   new_file="$pfix$para_model$ext"
+
+  ./util/config.sh model="$para_model" n_tor="$numone" n_period="$para_nperiod" n_plane="$numone" && make cleanall && make -j 8
+  make -j 8
+  mv "$origin_file" "$pfix$para_model$underscore$numone$underscore$para_nperiod$underscore$numone"
    
   ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
   make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag kinetic_main #q_fmhd_3D
