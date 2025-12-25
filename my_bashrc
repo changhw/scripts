@@ -443,10 +443,15 @@ make_jorek() {
   local para_nplane="$4"
   pfix="jorek_model"
   underscore="_"
+  numone="1"
   ext="$underscore$para_ntor$underscore$para_nperiod$underscore$para_nplane"
 
   origin_file="$pfix$para_model"
   new_file="$pfix$para_model$ext"
+
+  ./util/config.sh model="$para_model" n_tor="$numone" n_period="$para_nperiod" n_plane="$numone" && make cleanall && make -j 8
+  make -j 8
+  mv "$origin_file" "$pfix$para_model$underscore$numone$underscore$para_nperiod$underscore$numone"
    
   ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
   make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag #q_fmhd_3D
@@ -476,10 +481,15 @@ make_jorek_gnu() {
   local para_nplane="$4"
   pfix="jorek_model"
   underscore="_"
+  numone="1"
   ext="$underscore$para_ntor$underscore$para_nperiod$underscore$para_nplane"
 
   origin_file="$pfix$para_model"
   new_file="$pfix$para_model$ext"
+
+  ./util/config.sh model="$para_model" n_tor="$numone" n_period="$para_nperiod" n_plane="$numone" && make cleanall && make -j 8
+  make -j 8
+  mv "$origin_file" "$pfix$para_model$underscore$numone$underscore$para_nperiod$underscore$numone"
 
   ./util/config.sh model="$para_model" n_tor="$para_ntor" n_period="$para_nperiod" n_plane="$para_nplane" && make cleanall && make -j 8
   make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag #q_fmhd_3D
@@ -520,6 +530,29 @@ function sbatch_chain() {
   done
   echo "JobIDs: $thejobids"
   unset depend thejobid thejobids
+}
+
+function sbatch_chain_from() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: sbatch_chain_from <job_ID> jobscript1 [jobscript2 ...]"
+    return 1
+  fi
+
+  start_jobid="$1"
+  shift
+
+  thejobids=""
+  depend="--dependency=afterok:${start_jobid}"
+
+  while [ $# -gt 0 ]; do
+    thejobid=$(sbatch $depend "$1" | sed -e 's/Submitted batch job *//')
+    thejobids="$thejobids $thejobid"
+    depend="--dependency=afterok:${thejobid}"
+    shift
+  done
+
+  echo "JobIDs:$thejobids"
+  unset depend thejobid thejobids start_jobid
 }
 
 
@@ -738,3 +771,4 @@ export one_over_u0=795774.7154594767  # 1/u0
 # jorek_four_all -fn input
 # plot_poincare_all.py poincares/poinc_R-Z_s??????.dat -tm $time2si -cful True -png True
 # grep min,max deltas logfile # to check the delta values of val vec for each step, if it is too large, consider reducing the timestep
+# convert2vtk.sh -si -only 500 -j 8 ./jorek2vtk input
