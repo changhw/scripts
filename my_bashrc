@@ -772,3 +772,4 @@ export one_over_u0=795774.7154594767  # 1/u0
 # plot_poincare_all.py poincares/poinc_R-Z_s??????.dat -tm $time2si -cful True -png True
 # grep min,max deltas logfile # to check the delta values of val vec for each step, if it is too large, consider reducing the timestep
 # convert2vtk.sh -si -only 500 -j 8 ./jorek2vtk input
+export PYTHONSTARTUP=$HOME/scripts/.pythonrc
