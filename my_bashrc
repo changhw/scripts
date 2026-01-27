@@ -745,6 +745,26 @@ open_paraview() {
     paraview --data="$1/jorek...vtk"
 }
 
+make_install() {
+    # 1. Create the bin directory if it doesn't exist
+    if [[ ! -d "bin" ]]; then
+        mkdir -p bin
+        echo "Created bin/ directory."
+    fi
+
+    # 2. Loop through all files in the current directory
+    # -maxdepth 1 ensures we don't look into subdirectories
+    # -type f ensures we only look at files
+    for file in *; do
+        # Check if it's a regular file and if it's executable
+        if [[ -f "$file" && -x "$file" ]]; then
+            # Avoid moving the script itself if it's in the same folder
+            mv "$file" bin/
+            echo "Moved: $file -> bin/"
+        fi
+    done
+}
+
 export u0=1.2566370614359173e-06      # u0 vacuum magnetic permeability
 export one_over_u0=795774.7154594767  # 1/u0
 
