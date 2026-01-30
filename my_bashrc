@@ -574,6 +574,101 @@ function sbatch_chain_any() {
   unset depend thejobid thejobids
 }
 
+# Submit a job that depends on a previous job completing successfully (afterok)
+qsub_dep_job() {
+  local first_job_id="$1"
+  local script_name="$2"
+  # PBS uses -W depend=condition:jobid
+  qsub -W depend=afterok:"$first_job_id" "$script_name"
+}
+
+# Submit a job that depends on a previous job failing (afternotok)
+# Note: Based on your provided code which used 'afternotok'. 
+# If you meant "run regardless of success/fail", change to 'afterany'.
+qsub_dep_job_any() {
+  local first_job_id="$1"
+  local script_name="$2"
+  qsub -W depend=afternotok:"$first_job_id" "$script_name"
+}
+
+# Chain a list of scripts so they run one after another (on success)
+function qsub_chain() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: qsub_chain jobscript1 jobscript2 [...]"
+    return
+  fi
+  
+  thejobids=""
+  depend=""
+  
+  while [ $# -gt 0 ]; do
+    # qsub usually outputs only the Job ID (e.g., 12345.server), so no sed needed.
+    # We use -W depend=... only if $depend is set.
+    if [ -z "$depend" ]; then
+        thejobid=$(qsub "$1")
+    else
+        thejobid=$(qsub -W "$depend" "$1")
+    fi
+    
+    thejobids="$thejobids $thejobid"
+    depend="depend=afterok:$thejobid"
+    shift
+  done
+  
+  echo "JobIDs: $thejobids"
+  unset depend thejobid thejobids
+}
+
+# Chain a list of scripts starting after an existing Job ID
+function qsub_chain_from() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: qsub_chain_from <job_ID> jobscript1 [jobscript2 ...]"
+    return 1
+  fi
+
+  start_jobid="$1"
+  shift
+
+  thejobids=""
+  depend="depend=afterok:${start_jobid}"
+
+  while [ $# -gt 0 ]; do
+    thejobid=$(qsub -W "$depend" "$1")
+    thejobids="$thejobids $thejobid"
+    depend="depend=afterok:${thejobid}"
+    shift
+  done
+
+  echo "JobIDs:$thejobids"
+  unset depend thejobid thejobids start_jobid
+}
+
+# Chain a list of scripts where dependency is 'afternotok' (Run next only if previous failed)
+function qsub_chain_any() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: qsub_chain_any jobscript1 jobscript2 [...]"
+    return
+  fi
+  
+  thejobids=""
+  depend=""
+  
+  while [ $# -gt 0 ]; do
+    if [ -z "$depend" ]; then
+        thejobid=$(qsub "$1")
+    else
+        thejobid=$(qsub -W "$depend" "$1")
+    fi
+    
+    thejobids="$thejobids $thejobid"
+    depend="depend=afternotok:$thejobid"
+    shift
+  done
+  
+  echo "JobIDs: $thejobids"
+  unset depend thejobid thejobids
+}
+
 time2si() {
   time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')
 }
