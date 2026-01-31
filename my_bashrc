@@ -60,6 +60,8 @@ alias touch_all_folder_file='find . -exec touch {} +'
 alias touch_all_file='find . -type f -exec touch {} +'
 alias touch_all_folder='find . -type d -exec touch {} +'
 
+alias plot_multiple_files='plot_multiple_files.py'
+
 # Function to set more_outfile_digits to false
 set_more_outfile_digits_false() {
     sed -i 's/^more_outfile_digits=true/more_outfile_digits=false/' ~/jorek/util/convert2vtk.sh
