@@ -10,6 +10,9 @@ set surfaces 200
 !           0     1    2           3           4
 !expressions rho_p pres enflux_dyna enflux_inst enflux_equi
 
+!            0     1    2    3
+!expressions Psi_N pres Jtor FFprime_loc
+
 !           0     1    2            3            4            5            6           7
 !expressions rho_p pres minus_v_graP minus_P_divV perp_P_trans para_P_trans heat_source dPdt
 
