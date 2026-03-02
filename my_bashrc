@@ -320,7 +320,8 @@ jorek_post_all_reduced() {
     rm $file_id -f
   done
 
-  mv postproc postproc_reduced
+  mkdir postproc_reduced
+  mv postproc/* postproc_reduced/
 
   sed -i '1s/^#//' postproc_reduced/exprs_averaged_s*.dat
   sed -i '1s/^#//' postproc_reduced/exprs_midplane_s*.dat
