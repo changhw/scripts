@@ -973,6 +973,38 @@ get_step_from_time() {
     ' "$times_file"
 }
 
+get_time_from_step() {
+    local si_mode=0
+    local args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "-si" ]]; then
+            si_mode=1
+        else
+            args+=("$arg")
+        fi
+    done
+
+    local target_step="${args[0]}"
+    local times_file="${args[1]:-times.dat}"
+
+    local result
+    result=$(awk -v s="$target_step" '
+        NR == 1 { next }
+        $1 == s { print $2; found=1; exit }
+        END { if (!found) print "step not found" }
+    ' "$times_file")
+
+    if [[ "$si_mode" == 1 ]]; then
+        local time2si
+        time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')
+        echo time2si = $time2si [ms]
+        result=$(awk -v t="$result" -v s="$time2si" 'BEGIN { printf "%.6f", t * s }')
+        echo "$result [ms]"
+    else
+        echo "$result"
+    fi
+}
+
 
 export u0=1.2566370614359173e-06      # u0 vacuum magnetic permeability
 export one_over_u0=795774.7154594767  # 1/u0
