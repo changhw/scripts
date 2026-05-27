@@ -1005,6 +1005,15 @@ get_time_from_step() {
     fi
 }
 
+# Function to quickly rename the xterm window title
+title_xterm() {
+    if [ -z "$1" ]; then
+        echo "Usage: title 'Your New Title'"
+    else
+        echo -ne "\033]0;$*\007"
+    fi
+}
+
 
 export u0=1.2566370614359173e-06      # u0 vacuum magnetic permeability
 export one_over_u0=795774.7154594767  # 1/u0
