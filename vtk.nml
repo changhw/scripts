@@ -1,0 +1,7 @@
+&vtk_params
+  nsub                   = 5       ! Number of subdivisions of cubic finite elements into linear pieces
+  without_n0_mode        = .true.  ! If true, do not include the n=0 mode (i_tor=1)
+  periodic               = .false.
+  RphiZ_coords           = .false.
+/
+! convert2vtk.sh -only 2900 jorek2vtk_3d input

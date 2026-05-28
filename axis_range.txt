@@ -1,0 +1,3 @@
+! RaxisMin  RaxisMax  ZaxisMin  ZaxisMax  Niterations
+  1.72      1.78      -0.04      0.03      10
+!  1.62      1.70      0.10      0.20      10
