@@ -62,6 +62,38 @@ alias touch_all_folder='find . -type d -exec touch {} +'
 
 alias plot_multiple_files='plot_multiple_files.py'
 
+jorek_list_h5_ids() {
+  find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'
+}
+
+jorek_expand_id_args() {
+  local arg id regex matched
+  local available_ids=()
+
+  mapfile -t available_ids < <(jorek_list_h5_ids)
+
+  for arg in "$@"; do
+    if [[ "$arg" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' "$arg"
+      continue
+    fi
+
+    regex="${arg//\?/[0-9]}"
+    matched=0
+
+    for id in "${available_ids[@]}"; do
+      if [[ "$id" =~ ^${regex}$ ]]; then
+        printf '%s\n' "$id"
+        matched=1
+      fi
+    done
+
+    if [ "$matched" -eq 0 ]; then
+      echo "Warning: no JOREK IDs matched '$arg'." >&2
+    fi
+  done
+}
+
 # Function to set more_outfile_digits to false
 set_more_outfile_digits_false() {
     sed -i 's/^more_outfile_digits=true/more_outfile_digits=false/' ~/jorek/util/convert2vtk.sh
@@ -202,10 +234,10 @@ jorek_post_all() {
     #   sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' ~/scripts/postproc_script.txt
     #   ./jorek2_postproc < ~/scripts/postproc_script.txt > postproc.log
     # done
-    ids=("$@")
+    mapfile -t ids < <(jorek_expand_id_args "$@")
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
     ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
@@ -272,10 +304,10 @@ jorek_post_all_reduced() {
   unset id ids sorted_ids unique_ids ids_exist file_id
   # Check if an ID was provided as a parameter
   if [ -n "$1" ]; then
-    ids=("$@")
+    mapfile -t ids < <(jorek_expand_id_args "$@")
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
     ids_exist=($(find ./postproc_reduced/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
@@ -346,10 +378,10 @@ jorek_post_all_ompnum() {
     #   sed -i 's/\b[0-9]\{5\}\b/'"$id"'/g' ~/scripts/postproc_script.txt
     #   ./jorek2_postproc < ~/scripts/postproc_script.txt > postproc.log
     # done
-    ids=("$@")
+    mapfile -t ids < <(jorek_expand_id_args "$@")
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
     ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
@@ -435,10 +467,11 @@ jorek_poincare_all() {
   #   ids=("$@")
   # else
   if [ ${#ids[@]} -gt 0 ]; then
+    mapfile -t ids < <(jorek_expand_id_args "${ids[@]}")
     echo "Ids is not empty: ${ids[@]}"
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    mapfile -t ids < <(jorek_list_h5_ids)
     ids_exist=($(find ./poincares/ -maxdepth 1 -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
   sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
@@ -841,10 +874,11 @@ jorek_four_all() {
   done
   # Check if an ID was provided as a parameter
   if [ ${#ids[@]} -gt 0 ]; then
+    mapfile -t ids < <(jorek_expand_id_args "${ids[@]}")
     echo "Ids is not empty: ${ids[@]}"
   else
     # Extract IDs and store them in an array
-    ids=($(find ./ -maxdepth 1 -type f -name 'jorek*.h5' | grep -oE 'jorek[0-9]+\.h5' | sed 's/jorek\([0-9]\+\)\.h5/\1/'))
+    mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
 	ids_exist=($(find ./four_results/ -maxdepth 1 -type f -name 'Uphi_n000_m000_step*' | grep -oE 'step[0-9]+' | sed 's/step//'))
   fi
