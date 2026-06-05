@@ -55,6 +55,22 @@ gb() {
   awk -v bytes="$bytes" 'BEGIN { printf "%.1f GB", bytes / 1073741824 }'
 }
 
+normalize_rss_bytes() {
+  local bytes=$1
+  local limit_bytes=$2
+
+  if (( limit_bytes <= 0 )); then
+    echo "$bytes"
+    return
+  fi
+
+  while (( bytes > limit_bytes * 4 )); do
+    bytes=$(( bytes / 1024 ))
+  done
+
+  echo "$bytes"
+}
+
 # --- check job exists -----------------------------------------------
 chk() {
   squeue -j "$JOBID" -h -o '%T' 2>/dev/null
@@ -87,13 +103,15 @@ while true; do
       head -1
   )
 
-  max_rss_bytes=$(to_bytes "${max_rss:-0}" k)
-  ave_rss_bytes=$(to_bytes "${ave_rss:-0}" k)
-
   # query memory limit once
   mem_limit=$(scontrol show job "$JOBID" 2>/dev/null | \
               grep -oP 'MinMemoryNode=\K[^[:space:]]+' | head -1)
   mem_limit_bytes=$(to_bytes "${mem_limit:-0}" m)
+
+  max_rss_bytes=$(to_bytes "${max_rss:-0}" k)
+  ave_rss_bytes=$(to_bytes "${ave_rss:-0}" k)
+  max_rss_bytes=$(normalize_rss_bytes "$max_rss_bytes" "$mem_limit_bytes")
+  ave_rss_bytes=$(normalize_rss_bytes "$ave_rss_bytes" "$mem_limit_bytes")
 
   # percentage
   if (( mem_limit_bytes > 0 )); then
