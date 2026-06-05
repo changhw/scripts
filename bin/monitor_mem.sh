@@ -10,15 +10,49 @@
 JOBID="${1:?Usage: $0 <JOBID> [INTERVAL_SECONDS]}"
 INTERVAL="${2:-30}"
 
-# --- helpers: human-readable sizes ----------------------------------
-hr() {
-  local bytes=$1
-  if   (( bytes >= 1099511627776 )); then printf "%.1f TB" "$(bc <<< "scale=1; $bytes/1099511627776")"
-  elif (( bytes >= 1073741824 ));    then printf "%.1f GB" "$(bc <<< "scale=1; $bytes/1073741824")"
-  elif (( bytes >= 1048576 ));       then printf "%.1f MB" "$(bc <<< "scale=1; $bytes/1048576")"
-  elif (( bytes >= 1024 ));          then printf "%.1f KB" "$(bc <<< "scale=1; $bytes/1024")"
-  else printf "%d B" "$bytes"
+# --- helpers: size parsing and display -------------------------------
+to_bytes() {
+  local raw="$1"
+  local default_unit="${2:-k}"
+
+  raw="${raw,,}"
+  raw="${raw//[[:space:]]/}"
+  raw="${raw%%[cn]}"
+
+  if [[ -z "$raw" || "$raw" == "0" || "$raw" == "n/a" ]]; then
+    echo 0
+    return
   fi
+
+  if [[ "$raw" =~ ^([0-9]+([.][0-9]+)?)([kmgt]?i?b?|b)?$ ]]; then
+    local num="${BASH_REMATCH[1]}"
+    local unit="${BASH_REMATCH[3]}"
+    case "$unit" in
+      "") unit="$default_unit" ;;
+      b) unit=b ;;
+      k|kb|kib) unit=k ;;
+      m|mb|mib) unit=m ;;
+      g|gb|gib) unit=g ;;
+      t|tb|tib) unit=t ;;
+      *) unit="$default_unit" ;;
+    esac
+
+    awk -v n="$num" -v u="$unit" 'BEGIN {
+      if (u == "t")      m = 1099511627776
+      else if (u == "g") m = 1073741824
+      else if (u == "m") m = 1048576
+      else if (u == "k") m = 1024
+      else               m = 1
+      printf "%.0f\n", n * m
+    }'
+  else
+    echo 0
+  fi
+}
+
+gb() {
+  local bytes=$1
+  awk -v bytes="$bytes" 'BEGIN { printf "%.1f GB", bytes / 1073741824 }'
 }
 
 # --- check job exists -----------------------------------------------
@@ -48,27 +82,23 @@ while true; do
   fi
 
   # one sstat call to grab fields
-  read -r max_rss_kb ave_rss_kb node_list <<< \
-    $(sstat -j "$JOBID" --format=MaxRSS,AveRSS,MaxRSSNode --noheader --parsable 2>/dev/null | \
-      awk -F'|' '{print $1, $2, $3}')
+  IFS='|' read -r max_rss ave_rss node_list < <(
+    sstat -j "$JOBID" --format=MaxRSS,AveRSS,MaxRSSNode --noheader --parsable 2>/dev/null |
+      head -1
+  )
 
-  # strip trailing K/M/G suffix from sstat and fall back to 0 if empty
-  max_rss_kb=${max_rss_kb:-0}; max_rss_kb=${max_rss_kb//[!0-9]/}
-  ave_rss_kb=${ave_rss_kb:-0}; ave_rss_kb=${ave_rss_kb//[!0-9]/}
-  max_rss_kb=${max_rss_kb:-0}
-  ave_rss_kb=${ave_rss_kb:-0}
-  max_rss_bytes=$(( max_rss_kb * 1024 ))
-  ave_rss_bytes=$(( ave_rss_kb * 1024 ))
+  max_rss_bytes=$(to_bytes "${max_rss:-0}" k)
+  ave_rss_bytes=$(to_bytes "${ave_rss:-0}" k)
 
   # query memory limit once
-  mem_limit_mb=$(scontrol show job "$JOBID" 2>/dev/null | \
-                 grep -oP 'MinMemoryNode=\K[0-9]+' | head -1)
-  mem_limit_mb=${mem_limit_mb:-0}
-  mem_limit_bytes=$(( mem_limit_mb * 1048576 ))
+  mem_limit=$(scontrol show job "$JOBID" 2>/dev/null | \
+              grep -oP 'MinMemoryNode=\K[^[:space:]]+' | head -1)
+  mem_limit_bytes=$(to_bytes "${mem_limit:-0}" m)
 
   # percentage
   if (( mem_limit_bytes > 0 )); then
-    pct=$(bc <<< "scale=1; $max_rss_bytes * 100 / $mem_limit_bytes")
+    pct=$(awk -v used="$max_rss_bytes" -v limit="$mem_limit_bytes" \
+          'BEGIN { printf "%.1f", used * 100 / limit }')
   else
     pct="N/A"
   fi
@@ -76,9 +106,9 @@ while true; do
   printf "%-12s  %-8s  %12s  %12s  %12s  %11s%%  %-40s\n" \
          "$(date +%H:%M:%S)" \
          "$(chk)" \
-         "$(hr $max_rss_bytes)" \
-         "$(hr $ave_rss_bytes)" \
-         "$(hr $mem_limit_bytes)" \
+         "$(gb "$max_rss_bytes")" \
+         "$(gb "$ave_rss_bytes")" \
+         "$(gb "$mem_limit_bytes")" \
          "$pct" \
          "${node_list:-N/A}"
 
