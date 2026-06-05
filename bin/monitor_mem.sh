@@ -83,7 +83,7 @@ while true; do
 
   # one sstat call to grab fields
   IFS='|' read -r max_rss ave_rss node_list < <(
-    sstat -j "$JOBID" --format=MaxRSS,AveRSS,MaxRSSNode --noheader --parsable 2>/dev/null |
+    sstat -j "$JOBID" --format=MaxRSS,AveRSS,MaxRSSNode --noheader --parsable --noconvert 2>/dev/null |
       head -1
   )
 
