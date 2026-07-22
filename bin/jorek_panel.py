@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Desktop viewer for a JOREK input namelist and its referenced profile files."""
 
-from __future__ import annotations
-
 import argparse
 import bisect
 import math
@@ -12,6 +10,7 @@ import tempfile
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from typing import Dict, List, Optional, Set, Tuple
 
 from scipy.constants import (
     Boltzmann as BOLTZMANN_CONSTANT,
@@ -54,7 +53,7 @@ def parse_fortran_float(value: str) -> float:
     return float(value.replace("D", "E").replace("d", "e"))
 
 
-def parse_fortran_float_list(value: str) -> list[float]:
+def parse_fortran_float_list(value: str) -> List[float]:
     """Parse a comma-separated list of Fortran floating-point values."""
     return [parse_fortran_float(token.strip()) for token in value.rstrip(",").split(",") if token.strip()]
 
@@ -77,7 +76,7 @@ def canonical_parameter_value(value: str) -> object:
         return " ".join(cleaned.split()).casefold()
 
 
-def inline_boundary_rows(parameters: list[dict[str, object]]) -> list[list[float]] | None:
+def inline_boundary_rows(parameters: List[Dict[str, object]]) -> Optional[List[List[float]]]:
     """Build R/Z/Psi rows from active inline boundary lists, when present."""
     values = {str(item["name"]).casefold(): str(item["value"]) for item in parameters}
     names = ("r_boundary", "z_boundary", "psi_boundary")
@@ -91,7 +90,7 @@ def inline_boundary_rows(parameters: list[dict[str, object]]) -> list[list[float
     return [[columns[0][i], columns[1][i], columns[2][i]] for i in range(point_count)]
 
 
-def value_in_si(name: str, value: str, parameter_values: dict[str, str] | None = None) -> str:
+def value_in_si(name: str, value: str, parameter_values: Optional[Dict[str, str]] = None) -> str:
     """Return the parameter value in SI units.
 
     A dash indicates that no conversion rule has been supplied for the
@@ -165,7 +164,7 @@ def value_in_si(name: str, value: str, parameter_values: dict[str, str] | None =
     return "—"
 
 
-def jorek_normalization_constants(parameter_values: dict[str, str]) -> tuple[float, float] | None:
+def jorek_normalization_constants(parameter_values: Dict[str, str]) -> Optional[Tuple[float, float]]:
     """Return (JOREK velocity in m/s, JOREK time in ms)."""
     try:
         mass_number = parse_fortran_float(parameter_values["central_mass"])
@@ -236,8 +235,8 @@ def update_namelist_parameter(path: Path, line_number: int, name: str, new_value
             os.unlink(temporary_name)
 
 
-def parse_namelist(path: Path) -> list[dict[str, object]]:
-    parameters: list[dict[str, object]] = []
+def parse_namelist(path: Path) -> List[Dict[str, object]]:
+    parameters = []  # type: List[Dict[str, object]]
     section = ""
     for line_number, raw in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
         line = strip_comment(raw)
@@ -264,8 +263,8 @@ def parse_namelist(path: Path) -> list[dict[str, object]]:
     return parameters
 
 
-def read_numeric_file(path: Path) -> tuple[list[list[float]], list[str]]:
-    rows: list[list[float]] = []
+def read_numeric_file(path: Path) -> Tuple[List[List[float]], List[str]]:
+    rows = []  # type: List[List[float]]
     raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     for raw in raw_lines:
         line = strip_comment(raw).replace("D", "E").replace("d", "e")
@@ -280,7 +279,7 @@ def read_numeric_file(path: Path) -> tuple[list[list[float]], list[str]]:
     return rows, raw_lines
 
 
-def interpolate_linear(source_x: list[float], source_y: list[float], target_x: list[float]) -> list[float]:
+def interpolate_linear(source_x: List[float], source_y: List[float], target_x: List[float]) -> List[float]:
     """Linearly interpolate y onto target x, clamping beyond source endpoints."""
     if len(source_x) != len(source_y) or not source_x:
         raise ValueError("Interpolation source must contain matching x and y values")
@@ -303,17 +302,17 @@ def interpolate_linear(source_x: list[float], source_y: list[float], target_x: l
 
 
 class JorekPanel(tk.Tk):
-    def __init__(self, input_path: Path, comparison_path: Path | None = None):
+    def __init__(self, input_path: Path, comparison_path: Optional[Path] = None):
         super().__init__()
         self.title("JOREK Input Explorer")
         self.geometry("1280x800")
         self.minsize(900, 600)
         self.input_path = input_path.resolve()
-        self.parameters: list[dict[str, object]] = []
-        self.comparison_input_path: Path | None = None
-        self.comparison_parameters: list[dict[str, object]] = []
-        self.parameter_row_items: dict[str, str] = {}
-        self.profile_items: dict[str, dict[str, object]] = {}
+        self.parameters = []  # type: List[Dict[str, object]]
+        self.comparison_input_path = None  # type: Optional[Path]
+        self.comparison_parameters = []  # type: List[Dict[str, object]]
+        self.parameter_row_items = {}  # type: Dict[str, str]
+        self.profile_items = {}  # type: Dict[str, Dict[str, object]]
         self.search_var = tk.StringVar()
         self.status_var = tk.StringVar()
         self._configure_style()
@@ -622,7 +621,7 @@ class JorekPanel(tk.Tk):
         }
         primary_inline_boundary = inline_boundary_rows(self.parameters)
         comparison_inline_boundary = inline_boundary_rows(self.comparison_parameters)
-        primary_file_names: set[str] = set()
+        primary_file_names = set()  # type: Set[str]
         for item in self.parameters:
             filename = item["file"]
             if not filename:
@@ -952,8 +951,8 @@ class JorekPanel(tk.Tk):
         self.status_var.set(f"Viewing {display_name}")
 
     def _overlay_comparison_profile(
-        self, parameter_name: str, rows: list[list[float]],
-        parameters: list[dict[str, object]], input_path: Path,
+        self, parameter_name: str, rows: List[List[float]],
+        parameters: List[Dict[str, object]], input_path: Path,
     ) -> None:
         """Overlay input B on the existing original and SI plots."""
         widths = [len(row) for row in rows]
@@ -1120,7 +1119,7 @@ class JorekPanel(tk.Tk):
     @staticmethod
     def _fit_y_to_xrange(axis, xmin: float, xmax: float) -> None:
         """Fit an axis's y limits to its finite line data within an x range."""
-        visible_y: list[float] = []
+        visible_y = []  # type: List[float]
         for line in axis.get_lines():
             for x_value, y_value in zip(line.get_xdata(), line.get_ydata()):
                 try:
