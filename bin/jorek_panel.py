@@ -905,8 +905,11 @@ class JorekPanel(tk.Tk):
                             for value, density in zip(kappa, local_density)
                         ]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, kappa, linewidth=1.7, label=f"κ{suffix}")
-                    self.secondary_axes.plot(x, chi, "--", linewidth=1.4, label=f"χ{suffix}", color="#d97706")
+                    self.axes.plot(x, kappa, linewidth=1.7, label=f"κ (kg m⁻¹ s⁻¹){suffix}")
+                    self.secondary_axes.plot(
+                        x, chi, "--", linewidth=1.4,
+                        label=f"χ (m² s⁻¹){suffix}", color="#1f77b4",
+                    )
                 self.axes.set_ylabel("κ (kg m⁻¹ s⁻¹)")
                 self.secondary_axes.set_ylabel("χ (m² s⁻¹)", color="#d97706")
                 self.axes.legend(loc="upper left")
@@ -1080,9 +1083,13 @@ class JorekPanel(tk.Tk):
                         for value, density in zip(kappa, local_density)]
                        if local_density is not None else [math.nan] * len(kappa))
                 suffix = "" if columns == 2 else f" (column {column + 1})"
-                self.axes.plot(x, kappa, "--", linewidth=1.7, label=f"Input B — κ{suffix}")
+                self.axes.plot(
+                    x, kappa, "--", linewidth=1.7,
+                    label=f"Input B — κ (kg m⁻¹ s⁻¹){suffix}", color="#d97706",
+                )
                 self.secondary_axes.plot(
-                    x, chi, ":", linewidth=1.7, color="#7c3aed", label=f"Input B — χ{suffix}",
+                    x, chi, ":", linewidth=1.7, color="#d97706",
+                    label=f"Input B — χ (m² s⁻¹){suffix}",
                 )
 
         if self.axes.get_lines():

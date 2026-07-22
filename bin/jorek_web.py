@@ -27,7 +27,7 @@ from jorek_core import (
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>JOREK Input Explorer</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto;max-height:68vh}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{width:100%;min-height:380px;object-fit:contain;background:white}.preview{height:220px;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px}.edit{border:0;background:#2463a9;color:white;border-radius:4px;padding:4px 8px;cursor:pointer}.note{color:#607089;font-size:12px}</style></head>
+:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none!important}#parameters:not(.hidden){height:calc(100vh - 100px);box-sizing:border-box;display:flex;flex-direction:column}#parameters .scroll{flex:1 1 auto;max-height:none;min-height:0}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex:0 0 auto}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px;align-items:stretch}.profiles>div:last-child{display:flex;flex-direction:column;min-height:0}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{display:block;width:100%;height:auto;background:white;flex:0 0 auto}.plot:not([src]){display:none}.preview{min-height:220px;flex:1 1 auto;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px;box-sizing:border-box}.edit{border:0;background:#2463a9;color:white;border-radius:4px;padding:4px 8px;cursor:pointer}.note{color:#607089;font-size:12px}</style></head>
 <body><header><h1>JOREK Input Explorer</h1><span id="paths"></span></header>
 <div class="tabs"><button class="active" data-tab="parameters">Parameters</button><button data-tab="profiles">Referenced profiles</button></div>
 <section id="parameters" class="panel"><div class="controls"><label>Filter <input id="filter"></label><span class="note">Changed or missing values are highlighted.</span></div><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section>
@@ -39,7 +39,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.que
 async function load(){state=await (await fetch('/api/state')).json(); document.getElementById('paths').textContent=state.paths.join('  |  '); renderTable(); renderProfiles()}
 function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>JSON.stringify(r).toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
 document.getElementById('filter').oninput=renderTable;
-async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='—'&&row.b!=='—')side=confirm('Edit input A? Click Cancel to edit input B.')?'a':'b';else if(row.a==='—')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
+async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='—'&&row.b!=='—'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='—')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
 function renderProfiles(){document.getElementById('profileList').innerHTML=state.profiles.map(p=>`<button onclick="showProfile('${encodeURIComponent(p.key)}',this)"><b>${esc(p.name)}</b><br><span class="note">${esc(p.files)}</span></button>`).join('')}
 async function showProfile(key,button){currentProfile=decodeURIComponent(key);document.querySelectorAll('.profile-list button').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');refreshPlot();let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
 function refreshPlot(){if(!currentProfile)return;let p=new URLSearchParams({profile:currentProfile,t:Date.now()});let lo=document.getElementById('xmin').value,hi=document.getElementById('xmax').value;if(lo)p.set('xmin',lo);if(hi)p.set('xmax',hi);document.getElementById('plot').src='/api/plot?'+p}
@@ -120,6 +120,8 @@ class BrowserApp(object):
             rows = source["rows"]
             lines = ["R_boundary Z_boundary Psi_boundary"] + ["{:.12e} {:.12e} {:.12e}".format(*r) for r in rows]
             return rows, lines
+        if not source["path"].is_file():
+            return [], ["Missing referenced file: {}".format(source["path"])]
         return read_numeric_file(source["path"])
 
     def edit(self, key, side, value):
@@ -137,29 +139,55 @@ class BrowserApp(object):
         coordinate = [row[0] for row in valid]
         raw = [row[1] for row in valid]
         values, densities = self.values[side], density_constants(self.values[side])
-        if key == "jsource_file": return raw, "Current density (A m⁻²)"
-        if key == "rho_file" and densities: return [v * densities[0] for v in raw], "n (m⁻³)"
+        if key == "jsource_file": return raw, "Current density (A m⁻²)", None, None
+        if key == "rho_file" and densities:
+            return ([v * densities[0] for v in raw], "n (m⁻³)",
+                    [v * densities[1] for v in raw], "ρ (kg m⁻³)")
         if key in {"ti_file", "te_file", "t_file"} and densities:
-            return [v / (elementary_charge * mu_0 * densities[0]) for v in raw], "T (eV)"
+            return ([v / (elementary_charge * mu_0 * densities[0]) for v in raw], "T (eV)",
+                    [v / (Boltzmann * mu_0 * densities[0]) for v in raw], "T (K)")
         if key in HEAT_SOURCE_FILE_PARAMETERS and densities:
             multiplier = parse_float(values[HEAT_SOURCE_FILE_PARAMETERS[key]])
             factor = multiplier / ((GAMMA - 1) * mu_0 * math.sqrt(mu_0 * densities[1]))
-            return [v * factor for v in raw], "Heat source (W m⁻³)"
+            return [v * factor for v in raw], "Heat source (W m⁻³)", None, None
         if key in HEAT_TRANSPORT_FILE_PARAMETERS and densities:
             factor = math.sqrt(densities[1] / mu_0) / (GAMMA - 1)
-            return [v * factor for v in raw], "κ (kg m⁻¹ s⁻¹)"
-        return None, "No SI conversion configured"
+            kappa = [v * factor for v in raw]
+            density_item = next(
+                (item for item in self.parameters[side]
+                 if str(item["name"]).casefold() == "rho_file" and item["file"]), None,
+            )
+            chi = None
+            if density_item:
+                density_path = self.paths[side].parent / str(density_item["file"])
+                if density_path.is_file():
+                    density_rows, _ = read_numeric_file(density_path)
+                    density_rows = [row for row in density_rows if len(row) >= 2]
+                    if density_rows:
+                        normalized_density = interpolate(
+                            [row[0] for row in density_rows], [row[1] for row in density_rows], coordinate,
+                        )
+                        local_density = [densities[1] * value for value in normalized_density]
+                        chi = [value / density if density > 0 else math.nan
+                               for value, density in zip(kappa, local_density)]
+            return kappa, "κ (kg m⁻¹ s⁻¹)", chi, "χ (m² s⁻¹)" if chi is not None else None
+        return None, "No SI conversion configured", None, None
 
     def plot(self, key, xmin=None, xmax=None):
         entry = self.profiles[key]
         fig = Figure(figsize=(11, 4.5), dpi=120)
         original, converted = fig.subplots(1, 2)
+        converted_secondary = None
         colors = ("#1769aa", "#d97706")
         for side, source in enumerate(entry["sources"]):
             if not source:
                 continue
             rows, _ = self.source_rows(source)
             columns = min([len(r) for r in rows]) if rows else 0
+            if not rows:
+                original.text(.5, .5 - side * .08, "Input {}: missing or unreadable profile".format("AB"[side]),
+                              ha="center", va="center", transform=original.transAxes)
+                continue
             boundary = key == "boundary" and columns >= 3
             valid = [r for r in rows if len(r) >= columns]
             label, style = "Input {}".format("AB"[side]), "-" if side == 0 else "--"
@@ -172,10 +200,24 @@ class BrowserApp(object):
                 psi = [r[0] for r in valid]
                 x = [math.sqrt(v) if v >= 0 else math.nan for v in psi]
                 original.plot(x, [r[1] for r in valid], style, color=colors[side], label=label)
-                y, ylabel = self.converted(key, valid, side)
+                y, ylabel, secondary_y, secondary_ylabel = self.converted(key, valid, side)
                 if y is not None:
-                    converted.plot(x, y, style, color=colors[side], label=label)
+                    primary_label = (
+                        label + " — " + ylabel if key in HEAT_TRANSPORT_FILE_PARAMETERS else label
+                    )
+                    converted.plot(x, y, style, color=colors[side], label=primary_label)
                     converted.set_ylabel(ylabel)
+                # Density and temperature comparisons intentionally show only
+                # their left-axis quantities; single-input plots show both.
+                show_secondary = not (len(self.paths) == 2 and key in {"rho_file", "ti_file", "te_file", "t_file"})
+                if secondary_y is not None and show_secondary:
+                    if converted_secondary is None:
+                        converted_secondary = converted.twinx()
+                    converted_secondary.plot(
+                        x, secondary_y, ":" if side else "--", color=colors[side],
+                        label=label + " — " + secondary_ylabel,
+                    )
+                    converted_secondary.set_ylabel(secondary_ylabel)
                 original.set(xlabel=r"$\sqrt{\psi_n}$", ylabel="JOREK value", title="Original profile")
                 converted.set(xlabel=r"$\sqrt{\psi_n}$", title="SI profile")
         for axis in (original, converted):
@@ -187,6 +229,13 @@ class BrowserApp(object):
                 visible = [float(y) for line in axis.lines for x,y in zip(line.get_xdata(),line.get_ydata()) if xmin <= float(x) <= xmax and math.isfinite(float(y))]
                 if visible:
                     lo, hi = min(visible), max(visible); pad = (hi-lo)*.05 if hi!=lo else max(abs(lo)*.05,1e-12); axis.set_ylim(lo-pad,hi+pad)
+        if converted_secondary is not None:
+            converted_secondary.legend(loc="upper right")
+            if xmin is not None and xmax is not None:
+                converted_secondary.set_xlim(xmin, xmax)
+                visible = [float(y) for line in converted_secondary.lines for x,y in zip(line.get_xdata(),line.get_ydata()) if xmin <= float(x) <= xmax and math.isfinite(float(y))]
+                if visible:
+                    lo, hi = min(visible), max(visible); pad = (hi-lo)*.05 if hi!=lo else max(abs(lo)*.05,1e-12); converted_secondary.set_ylim(lo-pad,hi+pad)
         fig.tight_layout()
         output = io.BytesIO(); FigureCanvasAgg(fig).print_png(output); return output.getvalue()
 
@@ -194,7 +243,7 @@ class BrowserApp(object):
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
         def send(self, status, content, content_type):
-            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(content))); self.end_headers(); self.wfile.write(content)
+            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(content))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(content)
         def do_GET(self):
             parsed = urlparse(self.path); query = parse_qs(parsed.query)
             try:
