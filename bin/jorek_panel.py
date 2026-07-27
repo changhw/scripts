@@ -211,7 +211,10 @@ def replace_assignment_value(line: str, name: str, new_value: str) -> str:
     after_equals = code[equals_index + 1:]
     leading_space = after_equals[:len(after_equals) - len(after_equals.lstrip())]
     trailing_space = after_equals[len(after_equals.rstrip()):]
-    return code[:equals_index + 1] + leading_space + new_value + trailing_space + comment + ending
+    old_value = after_equals[len(leading_space):len(after_equals) - len(trailing_space)]
+    # Keep a trailing comma so following namelist entries stay separated.
+    comma = "" if new_value.rstrip().endswith(",") else "," if old_value.endswith(",") else ""
+    return code[:equals_index + 1] + leading_space + new_value + comma + trailing_space + comment + ending
 
 
 def update_namelist_parameter(path: Path, line_number: int, name: str, new_value: str) -> None:
@@ -686,6 +689,9 @@ class JorekPanel(tk.Tk):
         if not selection:
             return
         item = self.profile_items[selection[0]]
+        # X limits are per-profile: clear the boxes so stale values cannot mislead.
+        self.xmin_var.set("")
+        self.xmax_var.set("")
         is_inline_boundary = item.get("kind") == "inline_boundary"
         path = None if is_inline_boundary else Path(item["path"])
         primary_is_comparison = bool(item.get("primary_is_comparison"))
@@ -707,6 +713,7 @@ class JorekPanel(tk.Tk):
             self.raw_axes.text(.5, .5, "Referenced file not found", ha="center", va="center", transform=self.raw_axes.transAxes)
             self.axes.text(.5, .5, "No SI profile", ha="center", va="center", transform=self.axes.transAxes)
             self._set_preview("")
+            self.figure.suptitle(path.name)
             self.canvas.draw_idle()
             return
         if is_inline_boundary:
@@ -911,7 +918,7 @@ class JorekPanel(tk.Tk):
                         label=f"χ (m² s⁻¹){suffix}", color="#1f77b4",
                     )
                 self.axes.set_ylabel("κ (kg m⁻¹ s⁻¹)")
-                self.secondary_axes.set_ylabel("χ (m² s⁻¹)", color="#d97706")
+                self.secondary_axes.set_ylabel("χ (m² s⁻¹)", color="#1f77b4")
                 self.axes.legend(loc="upper left")
                 self.secondary_axes.legend(loc="upper right")
                 self.file_info.configure(
@@ -949,6 +956,7 @@ class JorekPanel(tk.Tk):
         else:
             self.raw_axes.text(.5, .5, "No plottable two-column numeric data", ha="center", va="center", transform=self.raw_axes.transAxes)
             self.axes.text(.5, .5, "No SI profile", ha="center", va="center", transform=self.axes.transAxes)
+            self.figure.suptitle(display_name)
         self._set_preview("\n".join(raw_lines))
         self.canvas.draw_idle()
         self.status_var.set(f"Viewing {display_name}")

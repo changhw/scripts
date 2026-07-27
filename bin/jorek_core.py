@@ -6,7 +6,6 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from scipy.constants import Boltzmann, elementary_charge, mu_0, proton_mass
 
@@ -213,7 +212,10 @@ def replace_assignment_value(line, name, new_value):
     after = code[equals + 1:]
     leading = after[:len(after) - len(after.lstrip())]
     trailing = after[len(after.rstrip()):]
-    return code[:equals + 1] + leading + new_value + trailing + comment + ending
+    old_value = after[len(leading):len(after) - len(trailing)]
+    # Keep a trailing comma so following namelist entries stay separated.
+    comma = "" if new_value.rstrip().endswith(",") else "," if old_value.endswith(",") else ""
+    return code[:equals + 1] + leading + new_value + comma + trailing + comment + ending
 
 
 def update_parameter(path, line_number, name, new_value):

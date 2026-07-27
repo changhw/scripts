@@ -10,7 +10,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
@@ -36,14 +36,15 @@ HTML = r"""<!doctype html>
 let state, currentProfile;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
-async function load(){state=await (await fetch('/api/state')).json(); document.getElementById('paths').textContent=state.paths.join('  |  '); renderTable(); renderProfiles()}
-function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>JSON.stringify(r).toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
+async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();if(currentProfile){refreshPlot();refreshPreview()}}
+function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>[r.line,r.name,r.a,r.b,r.si_a,r.si_b,r.section].join(' ').toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
 document.getElementById('filter').oninput=renderTable;
 async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='—'&&row.b!=='—'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='—')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
-function renderProfiles(){document.getElementById('profileList').innerHTML=state.profiles.map(p=>`<button onclick="showProfile('${encodeURIComponent(p.key)}',this)"><b>${esc(p.name)}</b><br><span class="note">${esc(p.files)}</span></button>`).join('')}
-async function showProfile(key,button){currentProfile=decodeURIComponent(key);document.querySelectorAll('.profile-list button').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');refreshPlot();let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
-function refreshPlot(){if(!currentProfile)return;let p=new URLSearchParams({profile:currentProfile,t:Date.now()});let lo=document.getElementById('xmin').value,hi=document.getElementById('xmax').value;if(lo)p.set('xmin',lo);if(hi)p.set('xmax',hi);document.getElementById('plot').src='/api/plot?'+p}
-document.getElementById('apply').onclick=refreshPlot;document.getElementById('reset').onclick=()=>{document.getElementById('xmin').value='';document.getElementById('xmax').value='';refreshPlot()};load();
+function renderProfiles(){document.getElementById('profileList').innerHTML=state.profiles.map(p=>`<button onclick="showProfile('${encodeURIComponent(p.key)}',this)"><b>${esc(p.name)}</b><br><span class="note">${esc(p.files)}</span></button>`).join('');if(currentProfile){let i=state.profiles.findIndex(p=>p.key===currentProfile),b=document.querySelectorAll('.profile-list button')[i];if(b)b.classList.add('selected')}}
+async function showProfile(key,button){currentProfile=decodeURIComponent(key);document.getElementById('xmin').value='';document.getElementById('xmax').value='';document.querySelectorAll('.profile-list button').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');refreshPlot();refreshPreview()}
+async function refreshPreview(){if(!currentProfile)return;let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
+function refreshPlot(){if(!currentProfile)return;let p=new URLSearchParams({profile:currentProfile,t:Date.now()});let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(lo&&hi){p.set('xmin',lo);p.set('xmax',hi)}document.getElementById('plot').src='/api/plot?'+p}
+document.getElementById('apply').onclick=()=>{let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(!lo&&!hi){refreshPlot();return}if(!lo||!hi){alert('Fill in both x limits, or clear both boxes for automatic limits.');return}let a=Number(lo),b=Number(hi);if(!isFinite(a)||!isFinite(b)||a>=b){alert('Enter numeric x limits with the minimum smaller than the maximum.');return}refreshPlot()};document.getElementById('reset').onclick=()=>{document.getElementById('xmin').value='';document.getElementById('xmax').value='';refreshPlot()};load();
 </script></body></html>"""
 
 
@@ -78,11 +79,12 @@ class BrowserApp(object):
                          "a": av, "b": bv, "si_a": value_in_si(item["name"], av, self.values[0]) if a else "—",
                          "si_b": value_in_si(item["name"], bv, self.values[1]) if b else "—",
                          "section": item["section"], "different": different, "editable": True})
-        for index, (name, unit) in enumerate((("v_JOREK", "m s⁻¹"), ("t_JOREK", "ms"))):
-            constants = [normalization_constants(v) for v in self.values]
-            a = "{:.8e} {}".format(constants[0][index], unit) if constants[0] else "—"
-            b = "{:.8e} {}".format(constants[1][index], unit) if len(constants) == 2 and constants[1] else "—"
-            rows.insert(index, {"key": name.casefold(), "name": name, "line": "—", "a": "1 unit", "b": "1 unit" if len(constants)==2 else "—", "si_a": a, "si_b": b, "section": "Derived constants", "different": len(constants)==2 and a!=b, "editable": False})
+        constants = [normalization_constants(v) for v in self.values]
+        if any(constants):
+            for index, (name, unit) in enumerate((("v_JOREK", "m s⁻¹"), ("t_JOREK", "ms"))):
+                a = "{:.8e} {}".format(constants[0][index], unit) if constants[0] else "—"
+                b = "{:.8e} {}".format(constants[1][index], unit) if len(constants) == 2 and constants[1] else "—"
+                rows.insert(index, {"key": name.casefold(), "name": name, "line": "—", "a": "1 unit", "b": "1 unit" if len(constants)==2 else "—", "si_a": a, "si_b": b, "section": "Derived constants", "different": len(constants)==2 and a!=b, "editable": False})
         return {"paths": [str(p) for p in self.paths], "compare": len(self.paths) == 2,
                 "parameters": rows, "profiles": [{"key": k, "name": v["name"], "files": v["files"]} for k,v in self.profiles.items()]}
 
@@ -111,7 +113,10 @@ class BrowserApp(object):
             labels = []
             for i, source in enumerate(entry["sources"]):
                 if source:
-                    labels.append("{}: {}".format("AB"[i], source.get("path", "inline lists")))
+                    label = "{}: {}".format("AB"[i], source.get("path", "inline lists"))
+                    if "path" in source and not source["path"].is_file():
+                        label += " (missing)"
+                    labels.append(label)
             entry["files"] = " | ".join(labels)
         return result
 
@@ -147,7 +152,10 @@ class BrowserApp(object):
             return ([v / (elementary_charge * mu_0 * densities[0]) for v in raw], "T (eV)",
                     [v / (Boltzmann * mu_0 * densities[0]) for v in raw], "T (K)")
         if key in HEAT_SOURCE_FILE_PARAMETERS and densities:
-            multiplier = parse_float(values[HEAT_SOURCE_FILE_PARAMETERS[key]])
+            try:
+                multiplier = parse_float(values[HEAT_SOURCE_FILE_PARAMETERS[key]])
+            except (KeyError, ValueError):
+                multiplier = math.nan
             factor = multiplier / ((GAMMA - 1) * mu_0 * math.sqrt(mu_0 * densities[1]))
             return [v * factor for v in raw], "Heat source (W m⁻³)", None, None
         if key in HEAT_TRANSPORT_FILE_PARAMETERS and densities:
@@ -223,7 +231,9 @@ class BrowserApp(object):
         for axis in (original, converted):
             axis.grid(True, alpha=.25)
             if axis.lines:
-                axis.legend()
+                # Keep the SI legend at upper left so it cannot overlap the
+                # secondary-axis legend pinned at upper right.
+                axis.legend(loc="upper left" if axis is converted else "best")
             if xmin is not None and xmax is not None:
                 axis.set_xlim(xmin, xmax)
                 visible = [float(y) for line in axis.lines for x,y in zip(line.get_xdata(),line.get_ydata()) if xmin <= float(x) <= xmax and math.isfinite(float(y))]
@@ -250,13 +260,24 @@ def make_handler(app):
                 if parsed.path == "/": return self.send(200, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 if parsed.path == "/api/state": return self.send(200, json.dumps(app.state(), ensure_ascii=False).encode("utf-8"), "application/json")
                 if parsed.path == "/api/preview":
-                    entry=app.profiles[query["profile"][0]]; chunks=[]
+                    key = query.get("profile", [None])[0]
+                    if key not in app.profiles:
+                        return self.send(404, b"Unknown profile", "text/plain")
+                    entry=app.profiles[key]; chunks=[]
                     for i,source in enumerate(entry["sources"]):
                         if source: chunks.append("===== INPUT {} =====\n{}".format("AB"[i],"\n".join(app.source_rows(source)[1])))
                     return self.send(200,json.dumps({"text":"\n\n".join(chunks)},ensure_ascii=False).encode("utf-8"),"application/json")
                 if parsed.path == "/api/plot":
-                    lo=query.get("xmin",[None])[0]; hi=query.get("xmax",[None])[0]
-                    data=app.plot(query["profile"][0],float(lo) if lo else None,float(hi) if hi else None)
+                    key = query.get("profile", [None])[0]
+                    if key not in app.profiles:
+                        return self.send(404, b"Unknown profile", "text/plain")
+                    try:
+                        lo, hi = float(query.get("xmin", [""])[0]), float(query.get("xmax", [""])[0])
+                        if not (math.isfinite(lo) and math.isfinite(hi)) or lo >= hi:
+                            lo = hi = None
+                    except ValueError:
+                        lo = hi = None
+                    data=app.plot(key,lo,hi)
                     return self.send(200,data,"image/png")
                 self.send(404,b"Not found","text/plain")
             except Exception as exc:
