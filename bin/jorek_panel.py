@@ -46,6 +46,18 @@ HEAT_SOURCE_SCALAR_PARAMETERS = {
     "heatsource_e": "heatsource_e_file",
     "heatsource": "heatsource_file",
 }
+PLOT_X_PSI = r"$\sqrt{\psi_n}$"
+PLOT_R = r"$R$"
+PLOT_Z = r"$Z$"
+PLOT_PSI = r"$\Psi$"
+PLOT_CURRENT_DENSITY = r"$J\;(\mathrm{A\,m^{-2}})$"
+PLOT_HEAT_SOURCE = r"$f_s\;(\mathrm{W\,m^{-3}})$"
+PLOT_T_EV = r"$T\;(\mathrm{eV})$"
+PLOT_T_K = r"$T\;(\mathrm{K})$"
+PLOT_NUMBER_DENSITY = r"$n\;(\mathrm{m^{-3}})$"
+PLOT_MASS_DENSITY = r"$\rho\;(\mathrm{kg\,m^{-3}})$"
+PLOT_KAPPA = r"$\kappa\;(\mathrm{kg\,m^{-1}\,s^{-1}})$"
+PLOT_CHI = r"$\chi\;(\mathrm{m^2\,s^{-1}})$"
 
 
 def parse_fortran_float(value: str) -> float:
@@ -99,17 +111,17 @@ def value_in_si(name: str, value: str, parameter_values: Optional[Dict[str, str]
     try:
         jorek_value = parse_fortran_float(value)
     except ValueError:
-        return "—"
+        return "--"
 
     if name.casefold() == "central_density":
-        return f"{jorek_value * 1e20:.8e} m⁻³"
+        return f"{jorek_value * 1e20:.8e} m^-3"
     if name.casefold() == "central_mass":
         return f"{jorek_value * PROTON_MASS_KG:.8e} kg"
     normalized_name = name.casefold()
     if normalized_name == "i_target":
         return f"{jorek_value:.8e} A"
     if normalized_name == "particlesource" and jorek_value == 0:
-        return "—"
+        return "--"
     if normalized_name in {
         "eta", "eta_ohmic", "visco", "visco_par", "visco_par_par",
         "d_perp", "d_par", "particlesource",
@@ -117,34 +129,34 @@ def value_in_si(name: str, value: str, parameter_values: Optional[Dict[str, str]
         *HEAT_TRANSPORT_PARAMETERS,
     }:
         if not parameter_values:
-            return "—"
+            return "--"
         try:
             mass_number = parse_fortran_float(parameter_values["central_mass"])
             density_jorek = parse_fortran_float(parameter_values["central_density"])
         except (KeyError, ValueError):
-            return "—"
+            return "--"
         rho_0 = mass_number * density_jorek * 1e20 * PROTON_MASS_KG
         if rho_0 <= 0:
-            return "—"
+            return "--"
         if normalized_name in {"eta", "eta_ohmic"}:
             resistivity = jorek_value * math.sqrt(VACUUM_PERMEABILITY / rho_0)
-            return f"{resistivity:.8e} Ω m"
+            return f"{resistivity:.8e} Ohm m"
         if normalized_name in {"d_perp", "d_par"}:
             diffusivity = jorek_value / math.sqrt(VACUUM_PERMEABILITY * rho_0)
-            return f"{diffusivity:.8e} m² s⁻¹"
+            return f"{diffusivity:.8e} m^2 s^-1"
         if normalized_name == "particlesource":
             particle_source = jorek_value * math.sqrt(rho_0 / VACUUM_PERMEABILITY)
-            return f"{particle_source:.8e} kg s⁻¹ m⁻³"
+            return f"{particle_source:.8e} kg s^-1 m^-3"
         if normalized_name in HEAT_SOURCE_SCALAR_PARAMETERS:
             matching_file = HEAT_SOURCE_SCALAR_PARAMETERS[normalized_name]
             if matching_file in parameter_values:
-                return "—"
+                return "--"
             heat_source = jorek_value / (
                 (ADIABATIC_INDEX - 1)
                 * VACUUM_PERMEABILITY
                 * math.sqrt(VACUUM_PERMEABILITY * rho_0)
             )
-            return f"{heat_source:.8e} W m⁻³"
+            return f"{heat_source:.8e} W m^-3"
         if normalized_name in HEAT_TRANSPORT_PARAMETERS:
             heat_transport = (
                 jorek_value * math.sqrt(rho_0 / VACUUM_PERMEABILITY)
@@ -152,16 +164,16 @@ def value_in_si(name: str, value: str, parameter_values: Optional[Dict[str, str]
             )
             heat_diffusivity = heat_transport / rho_0
             return (
-                f"κ={heat_transport:.8e} kg m⁻¹ s⁻¹; "
-                f"χ={heat_diffusivity:.8e} m² s⁻¹"
+                f"kappa={heat_transport:.8e} kg m^-1 s^-1; "
+                f"chi={heat_diffusivity:.8e} m^2 s^-1"
             )
         dynamic_viscosity = jorek_value * math.sqrt(rho_0 / VACUUM_PERMEABILITY)
         kinematic_viscosity = dynamic_viscosity / rho_0
         return (
-            f"μ={dynamic_viscosity:.8e} kg m⁻¹ s⁻¹; "
-            f"ν={kinematic_viscosity:.8e} m² s⁻¹"
+            f"mu={dynamic_viscosity:.8e} kg m^-1 s^-1; "
+            f"nu={kinematic_viscosity:.8e} m^2 s^-1"
         )
-    return "—"
+    return "--"
 
 
 def jorek_normalization_constants(parameter_values: Dict[str, str]) -> Optional[Tuple[float, float]]:
@@ -336,8 +348,8 @@ class JorekPanel(tk.Tk):
         header = ttk.Frame(self, padding=(14, 12, 14, 8))
         header.pack(fill="x")
         ttk.Label(header, text="JOREK Input Explorer", style="Title.TLabel").pack(side="left")
-        ttk.Button(header, text="Open input…", command=self.choose_input).pack(side="right")
-        ttk.Button(header, text="Compare two…", command=self.choose_comparison_inputs).pack(side="right", padx=6)
+        ttk.Button(header, text="Open input...", command=self.choose_input).pack(side="right")
+        ttk.Button(header, text="Compare two...", command=self.choose_comparison_inputs).pack(side="right", padx=6)
         self.path_label = ttk.Label(header, style="Muted.TLabel")
         self.path_label.pack(side="left", padx=18)
 
@@ -359,7 +371,7 @@ class JorekPanel(tk.Tk):
         entry.pack(side="left", padx=6)
         self.search_var.trace_add("write", lambda *_: self.refresh_parameters())
         ttk.Button(controls, text="Clear", command=lambda: self.search_var.set("")).pack(side="left")
-        ttk.Button(controls, text="Edit selected…", command=self.edit_selected_parameter).pack(side="left", padx=8)
+        ttk.Button(controls, text="Edit selected...", command=self.edit_selected_parameter).pack(side="left", padx=8)
         columns = ("line", "name", "value", "compare_value", "si_value", "compare_si_value", "section")
         self.parameter_tree = ttk.Treeview(parent, columns=columns, show="headings")
         for col, title, width in (("line", "Line", 65), ("name", "Parameter", 190),
@@ -510,20 +522,20 @@ class JorekPanel(tk.Tk):
         normalization = jorek_normalization_constants(parameter_values)
         comparison_normalization = jorek_normalization_constants(comparison_values)
         if normalization is not None or comparison_normalization is not None:
-            derived_definitions = (("v_JOREK", "1 velocity unit", 0, "m s⁻¹"),
+            derived_definitions = (("v_JOREK", "1 velocity unit", 0, "m s^-1"),
                                    ("t_JOREK", "1 time unit", 1, "ms"))
             for name, jorek_value, index, unit in derived_definitions:
-                si_value = f"{normalization[index]:.8e} {unit}" if normalization else "—"
+                si_value = f"{normalization[index]:.8e} {unit}" if normalization else "--"
                 compare_si = (
                     f"{comparison_normalization[index]:.8e} {unit}"
-                    if comparison_normalization else "—"
+                    if comparison_normalization else "--"
                 )
                 different = bool(self.comparison_parameters) and si_value != compare_si
                 haystack = f"derived constants {name} {jorek_value} {si_value} {compare_si}".casefold()
                 if not query or query in haystack:
                     self.parameter_tree.insert(
                         "", "end",
-                        values=("—", name, jorek_value, jorek_value if comparison_normalization else "—",
+                        values=("--", name, jorek_value, jorek_value if comparison_normalization else "--",
                                 si_value, compare_si, "Derived constants"),
                         tags=("different",) if different else (),
                     )
@@ -536,21 +548,21 @@ class JorekPanel(tk.Tk):
             first = first_items.get(normalized_name)
             second = second_items.get(normalized_name)
             item = first or second
-            first_value = str(first["value"]) if first else "—"
-            second_value = str(second["value"]) if second else "—"
-            si_value = value_in_si(str(item["name"]), first_value, parameter_values) if first else "—"
+            first_value = str(first["value"]) if first else "--"
+            second_value = str(second["value"]) if second else "--"
+            si_value = value_in_si(str(item["name"]), first_value, parameter_values) if first else "--"
             compare_si = (
-                value_in_si(str(item["name"]), second_value, comparison_values) if second else "—"
+                value_in_si(str(item["name"]), second_value, comparison_values) if second else "--"
             )
             different = bool(self.comparison_parameters) and (
                 first is None or second is None
                 or canonical_parameter_value(first_value) != canonical_parameter_value(second_value)
             )
-            first_line = str(first["line"]) if first else "—"
-            second_line = str(second["line"]) if second else "—"
+            first_line = str(first["line"]) if first else "--"
+            second_line = str(second["line"]) if second else "--"
             line = first_line if first_line == second_line or not second else f"{first_line}/{second_line}"
-            first_section = str(first["section"]) if first else "—"
-            second_section = str(second["section"]) if second else "—"
+            first_section = str(first["section"]) if first else "--"
+            second_section = str(second["section"]) if second else "--"
             section = (
                 first_section if first_section == second_section or not second
                 else f"{first_section}/{second_section}"
@@ -731,11 +743,11 @@ class JorekPanel(tk.Tk):
         columns = min(widths) if widths else 0
         if is_inline_boundary:
             display_name = "Inline R_boundary / Z_boundary / Psi_boundary"
-            self.file_info.configure(text=f"{display_name}  •  {len(rows)} points  •  from input namelist")
+            self.file_info.configure(text=f"{display_name}  |  {len(rows)} points  |  from input namelist")
         else:
             display_name = path.name
             size = path.stat().st_size
-            self.file_info.configure(text=f"{display_name}  •  {len(rows)} numeric rows  •  {columns} columns  •  {size:,} bytes")
+            self.file_info.configure(text=f"{display_name}  |  {len(rows)} numeric rows  |  {columns} columns  |  {size:,} bytes")
         if rows and columns >= 2:
             parameter_name = str(item["parameter"]).casefold()
             is_boundary = parameter_name in {"r_z_psi_bnd_file", "inline_boundary"} and columns >= 3
@@ -752,15 +764,15 @@ class JorekPanel(tk.Tk):
                     [row[1] for row in boundary_rows],
                     linewidth=1.7,
                 )
-                self.raw_axes.set_xlabel("R")
-                self.raw_axes.set_ylabel("Z")
+                self.raw_axes.set_xlabel(PLOT_R)
+                self.raw_axes.set_ylabel(PLOT_Z)
                 self.raw_axes.set_title("Boundary shape")
                 self.raw_axes.set_aspect("equal", adjustable="datalim")
             else:
                 for column in range(1, columns):
                     raw_y = [row[column] for row in rows if len(row) >= columns]
                     self.raw_axes.plot(x, raw_y, linewidth=1.7, label=f"Column {column + 1}")
-                self.raw_axes.set_xlabel(r"$\sqrt{\psi_n}$")
+                self.raw_axes.set_xlabel(PLOT_X_PSI)
                 self.raw_axes.set_ylabel("JOREK value")
                 self.raw_axes.set_title("Original profile")
                 if columns > 2:
@@ -795,21 +807,22 @@ class JorekPanel(tk.Tk):
                     linewidth=1.7,
                 )
                 self.axes.set_xlabel("Row ID")
-                self.axes.set_ylabel("Psi")
+                self.axes.set_ylabel(PLOT_PSI)
                 self.axes.set_title("Psi by boundary row")
                 self.file_info.configure(
-                    text=self.file_info.cget("text") + "  •  no SI conversion"
+                    text=self.file_info.cget("text") + "  |  no SI conversion"
                 )
             elif is_current_source:
                 for column in range(1, columns):
                     current_density = [row[column] for row in rows if len(row) >= columns]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, current_density, linewidth=1.7, label=f"J{suffix}")
-                self.axes.set_ylabel("Current density (A m⁻²)")
+                    self.axes.plot(x, current_density, linewidth=1.7,
+                                   label=f"{PLOT_CURRENT_DENSITY}{suffix}")
+                self.axes.set_ylabel(PLOT_CURRENT_DENSITY)
                 if columns > 2:
                     self.axes.legend()
                 self.file_info.configure(
-                    text=self.file_info.cget("text") + "  •  source values already in SI units"
+                    text=self.file_info.cget("text") + "  |  source values already in SI units"
                 )
             elif is_heat_source:
                 multiplier_name = HEAT_SOURCE_FILE_PARAMETERS[parameter_name]
@@ -828,13 +841,14 @@ class JorekPanel(tk.Tk):
                         source_multiplier * value / denominator for value in normalized
                     ]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, converted_source, linewidth=1.7, label=f"fₛ{suffix}")
-                self.axes.set_ylabel("Heat source (W m⁻³)")
+                    self.axes.plot(x, converted_source, linewidth=1.7,
+                                   label=f"{PLOT_HEAT_SOURCE}{suffix}")
+                self.axes.set_ylabel(PLOT_HEAT_SOURCE)
                 if columns > 2:
                     self.axes.legend()
                 self.file_info.configure(
                     text=self.file_info.cget("text")
-                    + f"  •  scaled by {multiplier_name}={source_multiplier:g}"
+                    + f"  |  scaled by {multiplier_name}={source_multiplier:g}"
                 )
             elif is_temperature_profile:
                 self.secondary_axes = self.axes.twinx()
@@ -849,17 +863,18 @@ class JorekPanel(tk.Tk):
                         for value in normalized
                     ]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, temperature_ev, linewidth=1.7, label=f"T (eV){suffix}")
+                    self.axes.plot(x, temperature_ev, linewidth=1.7,
+                                   label=f"{PLOT_T_EV}{suffix}")
                     self.secondary_axes.plot(
                         x, temperature_k, "--", linewidth=1.4,
-                        label=f"T (K){suffix}", color="#d97706",
+                        label=f"{PLOT_T_K}{suffix}", color="#d97706",
                     )
-                self.axes.set_ylabel("Temperature (eV)")
-                self.secondary_axes.set_ylabel("Temperature (K)", color="#d97706")
+                self.axes.set_ylabel(PLOT_T_EV)
+                self.secondary_axes.set_ylabel(PLOT_T_K, color="#d97706")
                 self.axes.legend(loc="upper left")
                 self.secondary_axes.legend(loc="upper right")
                 self.file_info.configure(
-                    text=self.file_info.cget("text") + "  •  temperature in eV and K"
+                    text=self.file_info.cget("text") + "  |  temperature in eV and K"
                 )
             elif is_density_profile:
                 self.secondary_axes = self.axes.twinx()
@@ -868,17 +883,18 @@ class JorekPanel(tk.Tk):
                     number_density = [value * number_density_0 for value in normalized]
                     mass_density = [value * rho_0 for value in normalized]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, number_density, linewidth=1.7, label=f"n{suffix}")
+                    self.axes.plot(x, number_density, linewidth=1.7,
+                                   label=f"{PLOT_NUMBER_DENSITY}{suffix}")
                     self.secondary_axes.plot(
                         x, mass_density, "--", linewidth=1.4,
-                        label=f"ρ{suffix}", color="#d97706",
+                        label=f"{PLOT_MASS_DENSITY}{suffix}", color="#d97706",
                     )
-                self.axes.set_ylabel("n (m⁻³)")
-                self.secondary_axes.set_ylabel("ρ (kg m⁻³)", color="#d97706")
+                self.axes.set_ylabel(PLOT_NUMBER_DENSITY)
+                self.secondary_axes.set_ylabel(PLOT_MASS_DENSITY, color="#d97706")
                 self.axes.legend(loc="upper left")
                 self.secondary_axes.legend(loc="upper right")
                 self.file_info.configure(
-                    text=self.file_info.cget("text") + "  •  number and mass density in SI units"
+                    text=self.file_info.cget("text") + "  |  number and mass density in SI units"
                 )
             elif is_heat_transport:
                 factor = math.sqrt(rho_0 / VACUUM_PERMEABILITY) / (ADIABATIC_INDEX - 1)
@@ -912,24 +928,24 @@ class JorekPanel(tk.Tk):
                             for value, density in zip(kappa, local_density)
                         ]
                     suffix = "" if columns == 2 else f" (column {column + 1})"
-                    self.axes.plot(x, kappa, linewidth=1.7, label=f"κ (kg m⁻¹ s⁻¹){suffix}")
+                    self.axes.plot(x, kappa, linewidth=1.7, label=f"{PLOT_KAPPA}{suffix}")
                     self.secondary_axes.plot(
                         x, chi, "--", linewidth=1.4,
-                        label=f"χ (m² s⁻¹){suffix}", color="#1f77b4",
+                        label=f"{PLOT_CHI}{suffix}", color="#1f77b4",
                     )
-                self.axes.set_ylabel("κ (kg m⁻¹ s⁻¹)")
-                self.secondary_axes.set_ylabel("χ (m² s⁻¹)", color="#1f77b4")
+                self.axes.set_ylabel(PLOT_KAPPA)
+                self.secondary_axes.set_ylabel(PLOT_CHI, color="#1f77b4")
                 self.axes.legend(loc="upper left")
                 self.secondary_axes.legend(loc="upper right")
                 self.file_info.configure(
                     text=self.file_info.cget("text")
-                    + ("  •  SI χ uses interpolated rho_file" if local_density is not None
-                       else "  •  rho_file unavailable; SI χ cannot be calculated")
+                    + ("  |  SI chi uses interpolated rho_file" if local_density is not None
+                       else "  |  rho_file unavailable; SI chi cannot be calculated")
                 )
             else:
                 self.axes.text(.5, .5, "No SI profile conversion configured", ha="center", va="center", transform=self.axes.transAxes)
             if not is_boundary:
-                self.axes.set_xlabel(r"$\sqrt{\psi_n}$")
+                self.axes.set_xlabel(PLOT_X_PSI)
                 self.axes.set_title("SI profile")
             comparison_path = item.get("comparison_path")
             comparison_rows = item.get("comparison_rows")
@@ -938,7 +954,7 @@ class JorekPanel(tk.Tk):
                     parameter_name, comparison_rows, self.comparison_parameters,
                     self.comparison_input_path,
                 )
-                self.file_info.configure(text=self.file_info.cget("text") + "  •  B: inline boundary")
+                self.file_info.configure(text=self.file_info.cget("text") + "  |  B: inline boundary")
             elif comparison_path is not None and Path(comparison_path).is_file():
                 comparison_rows, _ = read_numeric_file(Path(comparison_path))
                 self._overlay_comparison_profile(
@@ -946,7 +962,7 @@ class JorekPanel(tk.Tk):
                     self.comparison_input_path,
                 )
                 self.file_info.configure(
-                    text=self.file_info.cget("text") + f"  •  B: {Path(comparison_path).name}"
+                    text=self.file_info.cget("text") + f"  |  B: {Path(comparison_path).name}"
                 )
             for plot_axis in (self.raw_axes, self.axes, self.secondary_axes):
                 if plot_axis is not None and plot_axis.get_legend() is not None:
@@ -983,17 +999,17 @@ class JorekPanel(tk.Tk):
             if label.startswith("_"):
                 label = "Boundary" if is_boundary else "Profile"
             if not label.startswith("Input A"):
-                line.set_label(f"Input A — {label}")
+                line.set_label(f"Input A: {label}")
         if is_boundary:
             self.raw_axes.plot(
                 [row[0] for row in valid_rows], [row[1] for row in valid_rows],
-                "--", linewidth=1.7, label="Input B — Boundary",
+                "--", linewidth=1.7, label="Input B: Boundary",
             )
         else:
             for column in range(1, columns):
                 self.raw_axes.plot(
                     x, [row[column] for row in valid_rows], "--", linewidth=1.7,
-                    label="Input B" if columns == 2 else f"Input B — Column {column + 1}",
+                    label="Input B" if columns == 2 else f"Input B: Column {column + 1}",
                 )
         self.raw_axes.legend(loc="best", fontsize="small")
 
@@ -1019,7 +1035,7 @@ class JorekPanel(tk.Tk):
                     and label.startswith("T") and "(eV)" not in label):
                 label = label.replace("T", "T (eV)", 1)
             if not label.startswith("Input A"):
-                line.set_label(f"Input A — {label}")
+                line.set_label(f"Input A: {label}")
         if self.secondary_axes is not None:
             for line in self.secondary_axes.get_lines():
                 label = line.get_label()
@@ -1029,18 +1045,18 @@ class JorekPanel(tk.Tk):
                         and label.startswith("T") and "(K)" not in label):
                     label = label.replace("T", "T (K)", 1)
                 if not label.startswith("Input A"):
-                    line.set_label(f"Input A — {label}")
+                    line.set_label(f"Input A: {label}")
 
         if is_boundary:
             self.axes.plot(
                 range(1, len(valid_rows) + 1), [row[2] for row in valid_rows],
-                "--", linewidth=1.7, label="Input B — Psi",
+                "--", linewidth=1.7, label=f"Input B: {PLOT_PSI}",
             )
         elif parameter_name == "jsource_file":
             for column in range(1, columns):
                 suffix = "" if columns == 2 else f" (column {column + 1})"
                 self.axes.plot(x, [row[column] for row in valid_rows], "--", linewidth=1.7,
-                               label=f"Input B — J{suffix}")
+                               label=f"Input B: {PLOT_CURRENT_DENSITY}{suffix}")
         elif parameter_name in HEAT_SOURCE_FILE_PARAMETERS and rho_0 > 0:
             multiplier_name = HEAT_SOURCE_FILE_PARAMETERS[parameter_name]
             try:
@@ -1052,21 +1068,22 @@ class JorekPanel(tk.Tk):
             for column in range(1, columns):
                 converted = [multiplier * row[column] / denominator for row in valid_rows]
                 suffix = "" if columns == 2 else f" (column {column + 1})"
-                self.axes.plot(x, converted, "--", linewidth=1.7, label=f"Input B — fₛ{suffix}")
+                self.axes.plot(x, converted, "--", linewidth=1.7,
+                               label=f"Input B: {PLOT_HEAT_SOURCE}{suffix}")
         elif parameter_name in {"ti_file", "te_file", "t_file"} and number_density_0 > 0:
             for column in range(1, columns):
                 raw = [row[column] for row in valid_rows]
                 suffix = "" if columns == 2 else f" (column {column + 1})"
                 self.axes.plot(
                     x, [value / (ELEMENTARY_CHARGE * VACUUM_PERMEABILITY * number_density_0) for value in raw],
-                    "--", linewidth=1.7, label=f"Input B — T (eV){suffix}",
+                    "--", linewidth=1.7, label=f"Input B: {PLOT_T_EV}{suffix}",
                 )
         elif parameter_name == "rho_file" and rho_0 > 0:
             for column in range(1, columns):
                 raw = [row[column] for row in valid_rows]
                 suffix = "" if columns == 2 else f" (column {column + 1})"
                 self.axes.plot(x, [value * number_density_0 for value in raw], "--", linewidth=1.7,
-                               label=f"Input B — n{suffix}")
+                               label=f"Input B: {PLOT_NUMBER_DENSITY}{suffix}")
         elif parameter_name in HEAT_TRANSPORT_FILE_PARAMETERS and rho_0 > 0:
             if self.secondary_axes is None:
                 self.secondary_axes = self.axes.twinx()
@@ -1093,11 +1110,11 @@ class JorekPanel(tk.Tk):
                 suffix = "" if columns == 2 else f" (column {column + 1})"
                 self.axes.plot(
                     x, kappa, "--", linewidth=1.7,
-                    label=f"Input B — κ (kg m⁻¹ s⁻¹){suffix}", color="#d97706",
+                    label=f"Input B: {PLOT_KAPPA}{suffix}", color="#d97706",
                 )
                 self.secondary_axes.plot(
                     x, chi, ":", linewidth=1.7, color="#d97706",
-                    label=f"Input B — χ (m² s⁻¹){suffix}",
+                    label=f"Input B: {PLOT_CHI}{suffix}",
                 )
 
         if self.axes.get_lines():

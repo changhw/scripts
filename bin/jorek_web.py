@@ -23,6 +23,19 @@ from jorek_core import (
     read_numeric_file, update_parameter, value_in_si,
 )
 
+PLOT_X_PSI = r"$\sqrt{\psi_n}$"
+PLOT_R = r"$R$"
+PLOT_Z = r"$Z$"
+PLOT_PSI = r"$\Psi$"
+PLOT_CURRENT_DENSITY = r"$J\;(\mathrm{A\,m^{-2}})$"
+PLOT_HEAT_SOURCE = r"$f_s\;(\mathrm{W\,m^{-3}})$"
+PLOT_T_EV = r"$T\;(\mathrm{eV})$"
+PLOT_T_K = r"$T\;(\mathrm{K})$"
+PLOT_NUMBER_DENSITY = r"$n\;(\mathrm{m^{-3}})$"
+PLOT_MASS_DENSITY = r"$\rho\;(\mathrm{kg\,m^{-3}})$"
+PLOT_KAPPA = r"$\kappa\;(\mathrm{kg\,m^{-1}\,s^{-1}})$"
+PLOT_CHI = r"$\chi\;(\mathrm{m^2\,s^{-1}})$"
+
 
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>JOREK Input Explorer</title>
@@ -39,7 +52,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.que
 async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();if(currentProfile){refreshPlot();refreshPreview()}}
 function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>[r.line,r.name,r.a,r.b,r.si_a,r.si_b,r.section].join(' ').toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
 document.getElementById('filter').oninput=renderTable;
-async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='—'&&row.b!=='—'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='—')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
+async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='--'&&row.b!=='--'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='--')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
 function renderProfiles(){document.getElementById('profileList').innerHTML=state.profiles.map(p=>`<button onclick="showProfile('${encodeURIComponent(p.key)}',this)"><b>${esc(p.name)}</b><br><span class="note">${esc(p.files)}</span></button>`).join('');if(currentProfile){let i=state.profiles.findIndex(p=>p.key===currentProfile),b=document.querySelectorAll('.profile-list button')[i];if(b)b.classList.add('selected')}}
 async function showProfile(key,button){currentProfile=decodeURIComponent(key);document.getElementById('xmin').value='';document.getElementById('xmax').value='';document.querySelectorAll('.profile-list button').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');refreshPlot();refreshPreview()}
 async function refreshPreview(){if(!currentProfile)return;let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
@@ -73,18 +86,18 @@ class BrowserApp(object):
         for key in names:
             a, b = maps[0].get(key), maps[1].get(key) if len(maps) == 2 else None
             item = a or b
-            av, bv = (str(a["value"]) if a else "—"), (str(b["value"]) if b else "—")
+            av, bv = (str(a["value"]) if a else "--"), (str(b["value"]) if b else "--")
             different = len(maps) == 2 and (not a or not b or canonical_value(av) != canonical_value(bv))
             rows.append({"key": key, "name": item["name"], "line": a["line"] if a else b["line"],
-                         "a": av, "b": bv, "si_a": value_in_si(item["name"], av, self.values[0]) if a else "—",
-                         "si_b": value_in_si(item["name"], bv, self.values[1]) if b else "—",
+                         "a": av, "b": bv, "si_a": value_in_si(item["name"], av, self.values[0]) if a else "--",
+                         "si_b": value_in_si(item["name"], bv, self.values[1]) if b else "--",
                          "section": item["section"], "different": different, "editable": True})
         constants = [normalization_constants(v) for v in self.values]
         if any(constants):
-            for index, (name, unit) in enumerate((("v_JOREK", "m s⁻¹"), ("t_JOREK", "ms"))):
-                a = "{:.8e} {}".format(constants[0][index], unit) if constants[0] else "—"
-                b = "{:.8e} {}".format(constants[1][index], unit) if len(constants) == 2 and constants[1] else "—"
-                rows.insert(index, {"key": name.casefold(), "name": name, "line": "—", "a": "1 unit", "b": "1 unit" if len(constants)==2 else "—", "si_a": a, "si_b": b, "section": "Derived constants", "different": len(constants)==2 and a!=b, "editable": False})
+            for index, (name, unit) in enumerate((("v_JOREK", "m s^-1"), ("t_JOREK", "ms"))):
+                a = "{:.8e} {}".format(constants[0][index], unit) if constants[0] else "--"
+                b = "{:.8e} {}".format(constants[1][index], unit) if len(constants) == 2 and constants[1] else "--"
+                rows.insert(index, {"key": name.casefold(), "name": name, "line": "--", "a": "1 unit", "b": "1 unit" if len(constants)==2 else "--", "si_a": a, "si_b": b, "section": "Derived constants", "different": len(constants)==2 and a!=b, "editable": False})
         return {"paths": [str(p) for p in self.paths], "compare": len(self.paths) == 2,
                 "parameters": rows, "profiles": [{"key": k, "name": v["name"], "files": v["files"]} for k,v in self.profiles.items()]}
 
@@ -144,20 +157,20 @@ class BrowserApp(object):
         coordinate = [row[0] for row in valid]
         raw = [row[1] for row in valid]
         values, densities = self.values[side], density_constants(self.values[side])
-        if key == "jsource_file": return raw, "Current density (A m⁻²)", None, None
+        if key == "jsource_file": return raw, PLOT_CURRENT_DENSITY, None, None
         if key == "rho_file" and densities:
-            return ([v * densities[0] for v in raw], "n (m⁻³)",
-                    [v * densities[1] for v in raw], "ρ (kg m⁻³)")
+            return ([v * densities[0] for v in raw], PLOT_NUMBER_DENSITY,
+                    [v * densities[1] for v in raw], PLOT_MASS_DENSITY)
         if key in {"ti_file", "te_file", "t_file"} and densities:
-            return ([v / (elementary_charge * mu_0 * densities[0]) for v in raw], "T (eV)",
-                    [v / (Boltzmann * mu_0 * densities[0]) for v in raw], "T (K)")
+            return ([v / (elementary_charge * mu_0 * densities[0]) for v in raw], PLOT_T_EV,
+                    [v / (Boltzmann * mu_0 * densities[0]) for v in raw], PLOT_T_K)
         if key in HEAT_SOURCE_FILE_PARAMETERS and densities:
             try:
                 multiplier = parse_float(values[HEAT_SOURCE_FILE_PARAMETERS[key]])
             except (KeyError, ValueError):
                 multiplier = math.nan
             factor = multiplier / ((GAMMA - 1) * mu_0 * math.sqrt(mu_0 * densities[1]))
-            return [v * factor for v in raw], "Heat source (W m⁻³)", None, None
+            return [v * factor for v in raw], PLOT_HEAT_SOURCE, None, None
         if key in HEAT_TRANSPORT_FILE_PARAMETERS and densities:
             factor = math.sqrt(densities[1] / mu_0) / (GAMMA - 1)
             kappa = [v * factor for v in raw]
@@ -178,7 +191,7 @@ class BrowserApp(object):
                         local_density = [densities[1] * value for value in normalized_density]
                         chi = [value / density if density > 0 else math.nan
                                for value, density in zip(kappa, local_density)]
-            return kappa, "κ (kg m⁻¹ s⁻¹)", chi, "χ (m² s⁻¹)" if chi is not None else None
+            return kappa, PLOT_KAPPA, chi, PLOT_CHI if chi is not None else None
         return None, "No SI conversion configured", None, None
 
     def plot(self, key, xmin=None, xmax=None):
@@ -201,18 +214,19 @@ class BrowserApp(object):
             label, style = "Input {}".format("AB"[side]), "-" if side == 0 else "--"
             if boundary:
                 original.plot([r[0] for r in valid], [r[1] for r in valid], style, color=colors[side], label=label)
-                converted.plot(range(1, len(valid)+1), [r[2] for r in valid], style, color=colors[side], label=label)
-                original.set(xlabel="R", ylabel="Z", title="Boundary shape"); original.set_aspect("equal", adjustable="datalim")
-                converted.set(xlabel="Row ID", ylabel="Psi", title="Psi by boundary row")
+                converted.plot(
+                    range(1, len(valid) + 1), [r[2] for r in valid],
+                    style, color=colors[side], label=label + ": " + PLOT_PSI,
+                )
+                original.set(xlabel=PLOT_R, ylabel=PLOT_Z, title="Boundary shape"); original.set_aspect("equal", adjustable="datalim")
+                converted.set(xlabel="Row ID", ylabel=PLOT_PSI, title="Psi by boundary row")
             elif columns >= 2:
                 psi = [r[0] for r in valid]
                 x = [math.sqrt(v) if v >= 0 else math.nan for v in psi]
                 original.plot(x, [r[1] for r in valid], style, color=colors[side], label=label)
                 y, ylabel, secondary_y, secondary_ylabel = self.converted(key, valid, side)
                 if y is not None:
-                    primary_label = (
-                        label + " — " + ylabel if key in HEAT_TRANSPORT_FILE_PARAMETERS else label
-                    )
+                    primary_label = label + ": " + ylabel
                     converted.plot(x, y, style, color=colors[side], label=primary_label)
                     converted.set_ylabel(ylabel)
                 # Density and temperature comparisons intentionally show only
@@ -223,11 +237,11 @@ class BrowserApp(object):
                         converted_secondary = converted.twinx()
                     converted_secondary.plot(
                         x, secondary_y, ":" if side else "--", color=colors[side],
-                        label=label + " — " + secondary_ylabel,
+                        label=label + ": " + secondary_ylabel,
                     )
                     converted_secondary.set_ylabel(secondary_ylabel)
-                original.set(xlabel=r"$\sqrt{\psi_n}$", ylabel="JOREK value", title="Original profile")
-                converted.set(xlabel=r"$\sqrt{\psi_n}$", title="SI profile")
+                original.set(xlabel=PLOT_X_PSI, ylabel="JOREK value", title="Original profile")
+                converted.set(xlabel=PLOT_X_PSI, title="SI profile")
         for axis in (original, converted):
             axis.grid(True, alpha=.25)
             if axis.lines:
