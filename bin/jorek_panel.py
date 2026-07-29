@@ -8,6 +8,8 @@ import os
 import pickle
 import queue
 import re
+import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -501,6 +503,10 @@ class JorekPanel(tk.Tk):
         ttk.Button(form, text="Browse...", command=self._choose_operation_directory).grid(
             row=1, column=3, padx=(8, 0), pady=4,
         )
+        ttk.Button(
+            form, text="Open command window",
+            command=lambda: self.open_command_window(self.operation_cwd_var.get()),
+        ).grid(row=1, column=4, padx=(8, 0), pady=4)
         self.operation_field_frame = ttk.Labelframe(
             parent, text="Arguments", padding=(10, 6),
         )
@@ -701,6 +707,25 @@ class JorekPanel(tk.Tk):
         ttk.Button(top, text="Browse...", command=self._choose_plot_directory).grid(
             row=1, column=3, padx=(8, 0),
         )
+        ttk.Button(
+            top, text="Open command window",
+            command=lambda: self.open_command_window(self.plot_cwd_var.get()),
+        ).grid(row=1, column=4, padx=(8, 0))
+        ttk.Label(top, text="External viewer:").grid(
+            row=2, column=0, sticky="w", padx=(0, 8), pady=4,
+        )
+        ttk.Button(
+            top, text="Open ParaView",
+            command=lambda: self.open_visualization_app(
+                "paraview", self.plot_cwd_var.get(),
+            ),
+        ).grid(row=2, column=1, sticky="w", pady=4)
+        ttk.Button(
+            top, text="Open VisIt",
+            command=lambda: self.open_visualization_app(
+                "visit", self.plot_cwd_var.get(),
+            ),
+        ).grid(row=2, column=2, sticky="w", pady=4)
         top.columnconfigure(1, weight=1)
         top.columnconfigure(2, weight=1)
 
@@ -1034,6 +1059,293 @@ class JorekPanel(tk.Tk):
         selected = filedialog.askopenfilename(title="Select JOREK input", initialdir=self.input_path.parent)
         if selected:
             self.load_input(Path(selected))
+
+    def open_command_window(self, directory: str) -> None:
+        """Open an interactive terminal in a panel working directory."""
+        path = Path(directory).expanduser()
+        try:
+            path = path.resolve(strict=True)
+        except OSError as exc:
+            messagebox.showerror("Cannot open command window", str(exc))
+            return
+        if not path.is_dir():
+            messagebox.showerror(
+                "Cannot open command window",
+                "{} is not a directory.".format(path),
+            )
+            return
+
+        configured = os.environ.get("TERMINAL", "").strip()
+        candidates = []
+        if configured:
+            try:
+                candidates.append(shlex.split(configured))
+            except ValueError as exc:
+                messagebox.showerror(
+                    "Invalid TERMINAL setting",
+                    "{}\n\n{}".format(configured, exc),
+                )
+                return
+        candidates.extend([
+            ["x-terminal-emulator"],
+            ["gnome-terminal", "--working-directory={}".format(path)],
+            ["konsole", "--workdir", str(path)],
+            ["xfce4-terminal", "--working-directory", str(path)],
+            ["mate-terminal", "--working-directory={}".format(path)],
+            ["tilix", "--working-directory={}".format(path)],
+            ["lxterminal", "--working-directory={}".format(path)],
+            ["qterminal", "--workdir", str(path)],
+            ["terminator", "--working-directory={}".format(path)],
+            ["kitty", "--directory", str(path)],
+            ["alacritty", "--working-directory", str(path)],
+            ["wezterm", "start", "--cwd", str(path)],
+            ["urxvt", "-cd", str(path)],
+            ["rxvt", "-cd", str(path)],
+            ["xterm"],
+        ])
+
+        for command in candidates:
+            executable = command[0]
+            if not (
+                (Path(executable).is_file() and os.access(executable, os.X_OK))
+                or shutil.which(executable)
+            ):
+                continue
+            try:
+                subprocess.Popen(
+                    command, cwd=str(path), stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError:
+                continue
+            self.status_var.set("Opened command window at {}".format(path))
+            return
+
+        self._open_embedded_command_window(path)
+
+    def open_visualization_app(self, application: str, directory: str) -> None:
+        """Launch a viewer using its alias or command from ~/.bashrc."""
+        if application not in {"paraview", "visit"}:
+            messagebox.showerror(
+                "Cannot open viewer",
+                "Unsupported visualization application: {}".format(application),
+            )
+            return
+        path = Path(directory).expanduser()
+        try:
+            path = path.resolve(strict=True)
+        except OSError as exc:
+            messagebox.showerror("Cannot open viewer", str(exc))
+            return
+        if not path.is_dir():
+            messagebox.showerror(
+                "Cannot open viewer",
+                "{} is not a directory.".format(path),
+            )
+            return
+
+        bashrc = Path.home() / ".bashrc"
+        if not bashrc.is_file():
+            messagebox.showerror(
+                "Cannot open viewer",
+                "{} was not found.".format(bashrc),
+            )
+            return
+        try:
+            subprocess.Popen(
+                [
+                    "/bin/bash", "--noprofile", "--rcfile", str(bashrc),
+                    "-ic", application,
+                ],
+                cwd=str(path), stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            messagebox.showerror(
+                "Cannot open {}".format(application), str(exc),
+            )
+            return
+        self.status_var.set(
+            "Opened {} at {}".format(application, path)
+        )
+
+    def _open_embedded_command_window(self, initial_directory: Path) -> None:
+        """Provide a line-oriented shell window when no terminal app exists."""
+        window = tk.Toplevel(self)
+        window.title("Command window — {}".format(initial_directory))
+        window.geometry("900x600")
+        window.minsize(500, 300)
+
+        current_directory = {"path": initial_directory}
+        command_queue = queue.Queue()
+        state = {"process": None, "history": [], "history_index": 0}
+
+        header = ttk.Frame(window, padding=(8, 8, 8, 4))
+        header.pack(fill="x")
+        ttk.Label(header, text="Working directory:").pack(side="left")
+        directory_var = tk.StringVar(value=str(initial_directory))
+        ttk.Label(
+            header, textvariable=directory_var, style="Muted.TLabel",
+        ).pack(side="left", padx=6)
+
+        output_frame = ttk.Frame(window, padding=(8, 4))
+        output_frame.pack(fill="both", expand=True)
+        output = tk.Text(output_frame, wrap="none", font=("Consolas", 10))
+        output_scroll_y = ttk.Scrollbar(
+            output_frame, orient="vertical", command=output.yview,
+        )
+        output_scroll_x = ttk.Scrollbar(
+            output_frame, orient="horizontal", command=output.xview,
+        )
+        output.configure(
+            yscrollcommand=output_scroll_y.set,
+            xscrollcommand=output_scroll_x.set,
+        )
+        output_scroll_y.pack(side="right", fill="y")
+        output_scroll_x.pack(side="bottom", fill="x")
+        output.pack(fill="both", expand=True)
+        output.insert(
+            "end",
+            "No graphical terminal was found; using the built-in command "
+            "console.\nCommands run with bash at:\n{}\n\n".format(initial_directory),
+        )
+
+        controls = ttk.Frame(window, padding=(8, 4, 8, 8))
+        controls.pack(fill="x")
+        command_var = tk.StringVar()
+        command_entry = ttk.Entry(controls, textvariable=command_var)
+        command_entry.pack(side="left", fill="x", expand=True)
+
+        def append_output(text: str) -> None:
+            if not window.winfo_exists():
+                return
+            output.insert("end", text)
+            output.see("end")
+
+        def read_process(process) -> None:
+            if process.stdout is not None:
+                for line in iter(process.stdout.readline, ""):
+                    command_queue.put(("output", line))
+                process.stdout.close()
+            command_queue.put(("done", (process, process.wait())))
+
+        def run_command(_event=None) -> None:
+            command = command_var.get().strip()
+            if not command:
+                return
+            process = state["process"]
+            if process is not None and process.poll() is None:
+                messagebox.showinfo(
+                    "Command is running",
+                    "Interrupt or wait for the current command first.",
+                    parent=window,
+                )
+                return
+            state["history"].append(command)
+            state["history_index"] = len(state["history"])
+            command_var.set("")
+            append_output("$ {}\n".format(command))
+
+            try:
+                words = shlex.split(command)
+            except ValueError as exc:
+                append_output("bash: {}\n".format(exc))
+                return
+            if words and words[0] == "cd" and len(words) <= 2:
+                destination = Path(words[1]).expanduser() if len(words) == 2 else Path.home()
+                if not destination.is_absolute():
+                    destination = current_directory["path"] / destination
+                try:
+                    destination = destination.resolve(strict=True)
+                except OSError as exc:
+                    append_output("cd: {}\n".format(exc))
+                    return
+                if not destination.is_dir():
+                    append_output("cd: {}: Not a directory\n".format(destination))
+                    return
+                current_directory["path"] = destination
+                directory_var.set(str(destination))
+                window.title("Command window — {}".format(destination))
+                return
+
+            try:
+                process = subprocess.Popen(
+                    ["/bin/bash", "-lc", command],
+                    cwd=str(current_directory["path"]),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    universal_newlines=True, bufsize=1, start_new_session=True,
+                )
+            except OSError as exc:
+                append_output("Cannot run command: {}\n".format(exc))
+                return
+            state["process"] = process
+            threading.Thread(
+                target=read_process, args=(process,), daemon=True,
+            ).start()
+
+        def interrupt_command() -> None:
+            process = state["process"]
+            if process is None or process.poll() is not None:
+                return
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except OSError:
+                process.terminate()
+
+        def move_history(offset: int):
+            history = state["history"]
+            if not history:
+                return "break"
+            state["history_index"] = max(
+                0, min(len(history), state["history_index"] + offset),
+            )
+            index = state["history_index"]
+            command_var.set(history[index] if index < len(history) else "")
+            command_entry.icursor("end")
+            return "break"
+
+        def poll_output() -> None:
+            if not window.winfo_exists():
+                return
+            while True:
+                try:
+                    kind, payload = command_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if kind == "output":
+                    append_output(payload)
+                else:
+                    process, return_code = payload
+                    append_output(
+                        "\n[command exited with status {}]\n\n".format(return_code)
+                    )
+                    if state["process"] is process:
+                        state["process"] = None
+            window.after(100, poll_output)
+
+        def close_window() -> None:
+            process = state["process"]
+            if process is not None and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except OSError:
+                    process.terminate()
+            window.destroy()
+
+        ttk.Button(controls, text="Run", command=run_command).pack(side="left", padx=(6, 0))
+        ttk.Button(controls, text="Interrupt", command=interrupt_command).pack(side="left", padx=6)
+        ttk.Button(
+            controls, text="Clear", command=lambda: output.delete("1.0", "end"),
+        ).pack(side="left")
+        command_entry.bind("<Return>", run_command)
+        command_entry.bind("<Up>", lambda _event: move_history(-1))
+        command_entry.bind("<Down>", lambda _event: move_history(1))
+        window.protocol("WM_DELETE_WINDOW", close_window)
+        command_entry.focus_set()
+        self.status_var.set("Opened built-in command window at {}".format(initial_directory))
+        poll_output()
 
     def choose_comparison_inputs(self) -> None:
         selected = filedialog.askopenfilenames(
