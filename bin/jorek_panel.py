@@ -736,6 +736,16 @@ class JorekPanel(tk.Tk):
             nav, text="Next", command=lambda: self._move_plot_image(1), state="disabled",
         )
         self.plot_next_button.pack(side="left", padx=5)
+        self.plot_export_button = ttk.Button(
+            nav, text="Export .mplfig...", command=self.export_plot_figure,
+            state="disabled",
+        )
+        self.plot_export_button.pack(side="left", padx=5)
+        self.plot_standalone_button = ttk.Button(
+            nav, text="Open standalone...", command=self.open_plot_standalone,
+            state="disabled",
+        )
+        self.plot_standalone_button.pack(side="left", padx=5)
         self.plot_image_status = tk.StringVar(value="No captured figure")
         ttk.Label(nav, textvariable=self.plot_image_status).pack(side="left", padx=8)
         self.plot_canvas_host = ttk.Frame(image_frame)
@@ -926,6 +936,65 @@ class JorekPanel(tk.Tk):
         state = "normal" if len(self.plot_images) > 1 else "disabled"
         self.plot_previous_button.configure(state=state)
         self.plot_next_button.configure(state=state)
+        self.plot_export_button.configure(state="normal")
+        self.plot_standalone_button.configure(state="normal")
+
+    def export_plot_figure(self) -> None:
+        """Serialize the currently displayed Matplotlib figure."""
+        if not self.plot_images:
+            return
+        selected = filedialog.asksaveasfilename(
+            title="Export interactive Matplotlib figure",
+            defaultextension=".mplfig",
+            initialfile=self.plot_images[self.plot_image_index].stem + ".mplfig",
+            filetypes=(("Matplotlib figure object", "*.mplfig"), ("All files", "*")),
+        )
+        if not selected:
+            return
+        try:
+            with Path(selected).open("wb") as output:
+                pickle.dump(
+                    self.plot_result_figure, output, protocol=pickle.HIGHEST_PROTOCOL,
+                )
+        except (OSError, pickle.PickleError) as exc:
+            messagebox.showerror("Cannot export figure", str(exc))
+            return
+        self.plot_image_status.set("Exported {}".format(selected))
+
+    def open_plot_standalone(self) -> None:
+        """Open an independent, resizable copy with a full Matplotlib toolbar."""
+        if not self.plot_images:
+            return
+        try:
+            figure = pickle.loads(
+                pickle.dumps(
+                    self.plot_result_figure, protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            )
+        except Exception as exc:
+            messagebox.showerror("Cannot open standalone figure", str(exc))
+            return
+        window = tk.Toplevel(self)
+        window.title(
+            "MHD Control Panel — {}".format(
+                self.plot_images[self.plot_image_index].stem
+            )
+        )
+        window.geometry("1100x800")
+        window.minsize(500, 400)
+        host = ttk.Frame(window)
+        host.pack(fill="both", expand=True)
+        canvas = FigureCanvasTkAgg(figure, master=host)
+        toolbar = NavigationToolbar2Tk(canvas, host, pack_toolbar=False)
+        toolbar.update()
+        toolbar.pack(side="bottom", fill="x")
+        canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+        canvas.draw_idle()
+        # Keep references on the window so Tk and Matplotlib callbacks remain
+        # alive for the lifetime of this independent viewer.
+        window.figure = figure
+        window.canvas = canvas
+        window.toolbar = toolbar
 
     def _install_plot_figure(self, figure) -> None:
         """Attach a real Matplotlib figure and its interactive toolbar to Tk."""

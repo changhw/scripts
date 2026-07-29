@@ -52,9 +52,9 @@ HTML = r"""<!doctype html>
 <section id="parameters" class="panel"><div class="controls"><label>Filter <input id="filter"></label><span class="note">Changed or missing values are highlighted.</span></div><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section>
 <section id="profiles" class="panel hidden"><div class="profiles"><div><h3>Profiles</h3><div class="profile-list" id="profileList"></div></div><div><div class="controls"><label>x min <input id="xmin" size="8"></label><label>x max <input id="xmax" size="8"></label><button id="apply">Apply</button><button id="reset">Reset</button></div><img id="plot" class="plot"><div id="preview" class="preview">Select a profile.</div></div></div></section>
 <section id="operations" class="panel hidden"><div class="operation-grid"><label for="operationSelect">Operation</label><select id="operationSelect"></select><span id="operationNote" class="note"></span><span>Working directory</span><code id="operationCwd"></code><span class="note">The directory containing input A.</span></div><div id="operationFields" class="operation-grid" style="margin-top:12px"></div><div id="commandPreview" class="command"></div><div class="controls"><button id="runOperation" class="run">Run</button><button id="stopOperation" class="stop">Stop</button><button id="clearOperation">Clear output</button><span id="operationStatus" class="note">Idle</span></div><pre id="operationOutput" class="preview operation-output"></pre></section>
-<section id="visualization" class="panel hidden"><div class="viz-layout"><div><div class="operation-grid"><label for="vizSelect">Plot utility</label><select id="vizSelect"></select><span id="vizNote" class="note"></span><span>Working directory</span><code id="vizCwd"></code><span class="note">The directory containing input A.</span></div><div id="vizFields" class="operation-grid" style="margin-top:12px"></div><div id="vizPreview" class="command"></div><div class="controls"><button id="runViz" class="run">Generate</button><button id="stopViz" class="stop">Stop</button><span id="vizStatus" class="note">Idle</span></div><pre id="vizOutput" class="preview viz-log"></pre></div><div><div class="controls"><button id="previousViz">Previous</button><button id="nextViz">Next</button><span id="vizImageStatus" class="note">No captured figure</span></div><img id="vizImage" class="viz-image"></div></div></section>
+<section id="visualization" class="panel hidden"><div class="viz-layout"><div><div class="operation-grid"><label for="vizSelect">Plot utility</label><select id="vizSelect"></select><span id="vizNote" class="note"></span><span>Working directory</span><code id="vizCwd"></code><span class="note">The directory containing input A.</span></div><div id="vizFields" class="operation-grid" style="margin-top:12px"></div><div id="vizPreview" class="command"></div><div class="controls"><button id="runViz" class="run">Generate</button><button id="stopViz" class="stop">Stop</button><span id="vizStatus" class="note">Idle</span></div><pre id="vizOutput" class="preview viz-log"></pre></div><div><div class="controls"><button id="previousViz">Previous</button><button id="nextViz">Next</button><button id="standaloneViz">Open standalone</button><button id="downloadViz">Export .mplfig</button><span id="vizImageStatus" class="note">No captured figure</span></div><img id="vizImage" class="viz-image"></div></div></section>
 <script>
-let state, currentProfile, operationTimer, vizTimer, vizIndex=0, vizCount=0;
+let state, currentProfile, operationTimer, vizTimer, vizIndex=0, vizCount=0, vizFigureCount=0;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
 async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');document.getElementById('operationCwd').textContent=state.operation_directory;document.getElementById('vizCwd').textContent=state.operation_directory;if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();renderOperationSelector();renderVizSelector();if(currentProfile){refreshPlot();refreshPreview()}pollOperation();pollViz()}
@@ -78,14 +78,16 @@ async function pollOperation(){clearTimeout(operationTimer);let job=await (await
 function renderVizSelector(){let s=document.getElementById('vizSelect'),selected=s.value||state.plots[0].name;s.innerHTML=state.plots.map(p=>`<option value="${esc(p.name)}" ${p.available?'':'disabled'}>${esc(p.label)} (${esc(p.script)})${p.available?'':' — unavailable'}</option>`).join('');s.value=state.plots.some(p=>p.name===selected&&p.available)?selected:state.plots.find(p=>p.available).name;renderVizFields()}
 function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let choices=f.boolean?['true','false']:(f.choices||null),control=choices?`<select id="viz_${esc(f.name)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="viz_${esc(f.name)}" data-field="${esc(f.name)}" value="${esc(f.default||'')}">`;return `<label for="viz_${esc(f.name)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>x.oninput=updateVizPreview);document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
 function vizValues(){let v={};document.querySelectorAll('#vizFields [data-field]').forEach(x=>v[x.dataset.field]=x.value);return v}
-function updateVizPreview(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value),values=vizValues(),args=[];p.fields.forEach(f=>{let value=(values[f.name]||'').trim();if(!value)return;if(f.name==='time_multiplier'&&['$time2si','time2si','$t_jorek','t_jorek'].includes(value.toLowerCase())&&state.time2si!==null)value=String(state.time2si);if(f.boolean){let yes=['1','true','yes','on'].includes(value.toLowerCase());if(f.boolean==='flag'){if(yes)args.push(f.flag)}else if(f.boolean==='either')args.push(yes?f.flag:f.false_flag);else args.push(f.flag,yes?'true':'false')}else{let flag=(p.name==='plot_live_data'&&f.name==='title')?'-title':f.flag;if(flag)args.push(flag);args.push(value)}});document.getElementById('vizPreview').textContent='$ '+p.script+(args.length?' '+args.join(' '):'')}
+function updateVizPreview(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value),values=vizValues(),args=[];p.fields.forEach(f=>{let value=(values[f.name]||'').trim();if(!value)return;if(f.name.toLowerCase().includes('multiplier')&&['$time2si','time2si','$t_jorek','t_jorek'].includes(value.toLowerCase())&&state.time2si!==null)value=String(state.time2si);if(f.boolean){let yes=['1','true','yes','on'].includes(value.toLowerCase());if(f.boolean==='flag'){if(yes)args.push(f.flag)}else if(f.boolean==='either')args.push(yes?f.flag:f.false_flag);else args.push(f.flag,yes?'true':'false')}else{let flag=(p.name==='plot_live_data'&&f.name==='title')?'-title':(p.name==='plot_q_versus_time'&&f.name==='time_multiplier')?'-xm':f.flag;if(flag)args.push(flag);args.push(value)}});document.getElementById('vizPreview').textContent='$ '+p.script+(args.length?' '+args.join(' '):'')}
 document.getElementById('vizSelect').onchange=renderVizFields;
 document.getElementById('runViz').onclick=async()=>{let res=await fetch('/api/visualization/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plot:document.getElementById('vizSelect').value,values:vizValues()})}),out=await res.json();if(!res.ok){alert(out.error);return}vizIndex=0;pollViz()};
 document.getElementById('stopViz').onclick=async()=>{let res=await fetch('/api/visualization/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollViz()};
-function showViz(){let image=document.getElementById('vizImage');if(!vizCount){image.removeAttribute('src');document.getElementById('vizImageStatus').textContent='No captured figure';return}image.src='/api/visualization/image?index='+vizIndex+'&t='+Date.now();document.getElementById('vizImageStatus').textContent='Figure '+(vizIndex+1)+' of '+vizCount;document.getElementById('previousViz').disabled=document.getElementById('nextViz').disabled=vizCount<2}
+function showViz(){let image=document.getElementById('vizImage');if(!vizCount){image.removeAttribute('src');document.getElementById('vizImageStatus').textContent='No captured figure';document.getElementById('downloadViz').disabled=true;document.getElementById('standaloneViz').disabled=true;return}image.src='/api/visualization/image?index='+vizIndex+'&t='+Date.now();document.getElementById('vizImageStatus').textContent='Figure '+(vizIndex+1)+' of '+vizCount;document.getElementById('previousViz').disabled=document.getElementById('nextViz').disabled=vizCount<2;document.getElementById('downloadViz').disabled=vizIndex>=vizFigureCount;document.getElementById('standaloneViz').disabled=false}
 document.getElementById('previousViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex-1+vizCount)%vizCount;showViz()}};
 document.getElementById('nextViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex+1)%vizCount;showViz()}};
-async function pollViz(){clearTimeout(vizTimer);let job=await (await fetch('/api/visualization')).json(),output=document.getElementById('vizOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('vizStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping',available=state.plots.find(p=>p.name===document.getElementById('vizSelect').value).available;document.getElementById('runViz').disabled=running||!available;document.getElementById('stopViz').disabled=!running;if(job.image_count!==vizCount){vizCount=job.image_count;vizIndex=0;showViz()}if(running)vizTimer=setTimeout(pollViz,1000)}
+document.getElementById('downloadViz').onclick=()=>{if(vizIndex<vizFigureCount)window.location='/api/visualization/figure?index='+vizIndex};
+document.getElementById('standaloneViz').onclick=()=>{if(vizCount)window.open('/api/visualization/image?index='+vizIndex+'&t='+Date.now(),'mhd-figure-'+vizIndex,'width=1100,height=800,resizable=yes,scrollbars=yes')};
+async function pollViz(){clearTimeout(vizTimer);let job=await (await fetch('/api/visualization')).json(),output=document.getElementById('vizOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('vizStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping',available=state.plots.find(p=>p.name===document.getElementById('vizSelect').value).available;document.getElementById('runViz').disabled=running||!available;document.getElementById('stopViz').disabled=!running;vizFigureCount=job.figure_count||0;if(job.image_count!==vizCount){vizCount=job.image_count;vizIndex=0;showViz()}else showViz();if(running)vizTimer=setTimeout(pollViz,1000)}
 load();
 </script></body></html>"""
 
@@ -108,9 +110,10 @@ class BrowserApp(object):
         self.visualization_process = None
         self.visualization_directory = None
         self.visualization_images = []
+        self.visualization_figures = []
         self.visualization_job = {
             "status": "idle", "plot": None, "exit_code": None, "log": "",
-            "image_count": 0,
+            "image_count": 0, "figure_count": 0,
         }
         self.reload()
 
@@ -284,10 +287,11 @@ class BrowserApp(object):
             self.visualization_process = process
             self.visualization_directory = output_directory
             self.visualization_images = []
+            self.visualization_figures = []
             self.visualization_job = {
                 "status": "running", "plot": plot_name, "exit_code": None,
                 "log": "$ cd {}\n$ {}\n".format(self.paths[0].parent, preview),
-                "image_count": 0,
+                "image_count": 0, "figure_count": 0,
             }
         threading.Thread(
             target=self._capture_visualization, args=(process, output_directory),
@@ -304,9 +308,12 @@ class BrowserApp(object):
             process.stdout.close()
         return_code = process.wait()
         images = sorted(output_directory.glob("*.png"))
+        figures = sorted(output_directory.glob("*.mplfig"))
         with self.visualization_lock:
             self.visualization_images = images
+            self.visualization_figures = figures
             self.visualization_job["image_count"] = len(images)
+            self.visualization_job["figure_count"] = len(figures)
             self.visualization_job["exit_code"] = return_code
             self.visualization_job["status"] = (
                 "completed" if return_code == 0 and images else "failed"
@@ -334,6 +341,13 @@ class BrowserApp(object):
                 raise ValueError("Unknown visualization image")
             path = self.visualization_images[index]
         return path.read_bytes()
+
+    def visualization_figure(self, index):
+        with self.visualization_lock:
+            if not 0 <= index < len(self.visualization_figures):
+                raise ValueError("Interactive figure is unavailable")
+            path = self.visualization_figures[index]
+        return path.name, path.read_bytes()
 
     def converted(self, key, rows, side):
         valid = [row for row in rows if len(row) >= 2]
@@ -449,8 +463,10 @@ class BrowserApp(object):
 
 def make_handler(app):
     class Handler(BaseHTTPRequestHandler):
-        def send(self, status, content, content_type):
-            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(content))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(content)
+        def send(self, status, content, content_type, extra_headers=None):
+            self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(content))); self.send_header("Cache-Control", "no-store")
+            for name, value in (extra_headers or {}).items(): self.send_header(name, value)
+            self.end_headers(); self.wfile.write(content)
         def do_GET(self):
             parsed = urlparse(self.path); query = parse_qs(parsed.query)
             try:
@@ -472,6 +488,16 @@ def make_handler(app):
                     except ValueError:
                         return self.send(400, b"Invalid image index", "text/plain")
                     return self.send(200, app.visualization_image(index), "image/png")
+                if parsed.path == "/api/visualization/figure":
+                    try:
+                        index = int(query.get("index", ["0"])[0])
+                    except ValueError:
+                        return self.send(400, b"Invalid figure index", "text/plain")
+                    name, data = app.visualization_figure(index)
+                    return self.send(
+                        200, data, "application/octet-stream",
+                        {"Content-Disposition": 'attachment; filename="{}"'.format(name)},
+                    )
                 if parsed.path == "/api/preview":
                     key = query.get("profile", [None])[0]
                     if key not in app.profiles:

@@ -223,8 +223,14 @@ PLOT_FIELDS = {
         "label": "Time multiplier", "default": "1.0", "flag": "-tm",
         "help": "Use $time2si (or t_JOREK) to derive the multiplier from the active input.",
     },
-    "x_multiplier": {"label": "X multiplier", "default": "1.0", "flag": "-xm"},
-    "y_multiplier": {"label": "Y multiplier", "default": "1.0", "flag": "-ym"},
+    "x_multiplier": {
+        "label": "X multiplier", "default": "1.0", "flag": "-xm",
+        "help": "Use $time2si (or t_JOREK) to derive the value from the active input.",
+    },
+    "y_multiplier": {
+        "label": "Y multiplier", "default": "1.0", "flag": "-ym",
+        "help": "Use $time2si (or t_JOREK) to derive the value from the active input.",
+    },
     "radial_power": {"label": "Radial power", "default": "1.0", "flag": "-rp"},
     "q_cut": {"label": "q cutoff", "default": "1.3", "flag": "-qc"},
     "time_slice": {"label": "Time slice", "default": "", "flag": "-tslc", "optional": True},
@@ -359,7 +365,12 @@ def _plot_arguments(plot_name, values):
             continue
         parts = _split_plot_value(field["label"], value) if field.get("multi") else [value]
         if field.get("flag"):
-            flag = "-title" if plot_name == "plot_live_data" and field_name == "title" else field["flag"]
+            if plot_name == "plot_live_data" and field_name == "title":
+                flag = "-title"
+            elif plot_name == "plot_q_versus_time" and field_name == "time_multiplier":
+                flag = "-xm"
+            else:
+                flag = field["flag"]
             arguments.append(flag)
         arguments.extend(parts)
     return arguments
@@ -368,14 +379,18 @@ def _plot_arguments(plot_name, values):
 def resolve_plot_values(values, parameter_values=None):
     """Resolve panel conveniences such as $time2si into utility CLI values."""
     resolved = dict(values or {})
-    multiplier = str(resolved.get("time_multiplier", "")).strip()
-    if multiplier.casefold() in {"$time2si", "time2si", "$t_jorek", "t_jorek"}:
-        constants = normalization_constants(parameter_values or {})
-        if constants is None:
-            raise ValueError(
-                "$time2si requires central_density and central_mass in the active input"
-            )
-        resolved["time_multiplier"] = "{:.12g}".format(constants[1])
+    aliases = {"$time2si", "time2si", "$t_jorek", "t_jorek"}
+    for field_name, field_value in list(resolved.items()):
+        if "multiplier" not in field_name.casefold():
+            continue
+        multiplier = str(field_value).strip()
+        if multiplier.casefold() in aliases:
+            constants = normalization_constants(parameter_values or {})
+            if constants is None:
+                raise ValueError(
+                    "$time2si requires central_density and central_mass in the active input"
+                )
+            resolved[field_name] = "{:.12g}".format(constants[1])
     return resolved
 
 

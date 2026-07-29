@@ -84,11 +84,30 @@ def run_python(output_directory, command):
     sys.path.insert(0, str(script.parent))
     sys.argv = [str(script)] + expand_globs(command[1:])
     plt.show = lambda *args, **kwargs: None
+    original_parse_args = None
+    if script.name == "plot_f_versus_time.py":
+        # The utility declares --skiprows without type=int, but later performs
+        # numeric comparisons on it.  Normalize the parsed namespace here so
+        # CLI values work just like the integer default.
+        import argparse
+        original_parse_args = argparse.ArgumentParser.parse_args
+
+        def parse_args_with_integer_skiprows(parser, *args, **kwargs):
+            namespace = original_parse_args(parser, *args, **kwargs)
+            if hasattr(namespace, "skiprows"):
+                namespace.skiprows = int(namespace.skiprows)
+            return namespace
+
+        argparse.ArgumentParser.parse_args = parse_args_with_integer_skiprows
     try:
-        runpy.run_path(str(script), run_name="__main__")
-    except SystemExit as exc:
-        if exc.code not in (None, 0):
-            raise
+        try:
+            runpy.run_path(str(script), run_name="__main__")
+        except SystemExit as exc:
+            if exc.code not in (None, 0):
+                raise
+    finally:
+        if original_parse_args is not None:
+            argparse.ArgumentParser.parse_args = original_parse_args
     paths = save_matplotlib_figures(output_directory)
     if not paths:
         raise RuntimeError("The plotting script completed without producing a figure")
@@ -232,7 +251,7 @@ def run_grid(output_directory, command):
     name_filter = ""
     if "-o" in arguments and arguments.index("-o") + 1 < len(arguments):
         name_filter = arguments[arguments.index("-o") + 1]
-    pattern = "grid_*{}*.dat".format(name_filter)
+    pattern = "grid_*{}*.dat".format(name_filter) if name_filter else "grid_*.dat"
     grid_paths = sorted(
         Path(".").glob(pattern), key=lambda path: path.stat().st_mtime
     )
