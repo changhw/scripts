@@ -5,12 +5,20 @@ import argparse
 import bisect
 import math
 import os
+import queue
 import re
+import signal
+import subprocess
 import tempfile
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Dict, List, Optional, Set, Tuple
+
+from jorek_core import (
+    format_operation_command, jorek_operation_command, operation_definitions,
+)
 
 from scipy.constants import (
     Boltzmann as BOLTZMANN_CONSTANT,
@@ -330,6 +338,9 @@ class JorekPanel(tk.Tk):
         self.profile_items = {}  # type: Dict[str, Dict[str, object]]
         self.search_var = tk.StringVar()
         self.status_var = tk.StringVar()
+        self.operation_process = None
+        self.operation_queue = queue.Queue()
+        self.operation_fields = {}
         self._configure_style()
         self._build_ui()
         if comparison_path is None:
@@ -357,10 +368,13 @@ class JorekPanel(tk.Tk):
         notebook.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         params_tab = ttk.Frame(notebook, padding=8)
         profiles_tab = ttk.Frame(notebook, padding=8)
+        operations_tab = ttk.Frame(notebook, padding=8)
         notebook.add(params_tab, text="Parameters")
         notebook.add(profiles_tab, text="Referenced profiles")
+        notebook.add(operations_tab, text="Convert / post-process")
         self._build_parameters_tab(params_tab)
         self._build_profiles_tab(profiles_tab)
+        self._build_operations_tab(operations_tab)
         ttk.Label(self, textvariable=self.status_var, anchor="w", relief="sunken", padding=5).pack(fill="x")
 
     def _build_parameters_tab(self, parent: ttk.Frame) -> None:
@@ -446,6 +460,209 @@ class JorekPanel(tk.Tk):
         xscroll.pack(side="bottom", fill="x")
         self.preview.pack(fill="both", expand=True)
 
+    def _build_operations_tab(self, parent: ttk.Frame) -> None:
+        """Build the shared my_bashrc command runner."""
+        self.operation_definitions = operation_definitions()
+        self.operation_by_name = {
+            item["name"]: item for item in self.operation_definitions
+        }
+        form = ttk.Frame(parent)
+        form.pack(fill="x")
+        ttk.Label(form, text="Operation:").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.operation_var = tk.StringVar(value=self.operation_definitions[0]["name"])
+        selector = ttk.Combobox(
+            form, textvariable=self.operation_var, state="readonly", width=34,
+            values=[item["name"] for item in self.operation_definitions],
+        )
+        selector.grid(row=0, column=1, sticky="ew", pady=4)
+        selector.bind("<<ComboboxSelected>>", lambda _event: self._refresh_operation_form())
+        self.operation_description = ttk.Label(form, style="Muted.TLabel")
+        self.operation_description.grid(row=0, column=2, sticky="w", padx=10)
+
+        ttk.Label(form, text="Working directory:").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4,
+        )
+        self.operation_cwd_var = tk.StringVar(value=str(self.input_path.parent))
+        ttk.Entry(form, textvariable=self.operation_cwd_var).grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=4,
+        )
+        ttk.Button(form, text="Browse...", command=self._choose_operation_directory).grid(
+            row=1, column=3, padx=(8, 0), pady=4,
+        )
+        self.operation_field_frame = ttk.Labelframe(
+            parent, text="Arguments", padding=(10, 6),
+        )
+        self.operation_field_frame.pack(fill="x", pady=(10, 6))
+        self.operation_preview_var = tk.StringVar()
+        preview = ttk.Labelframe(parent, text="Command preview", padding=7)
+        preview.pack(fill="x", pady=5)
+        ttk.Label(
+            preview, textvariable=self.operation_preview_var,
+            font=("Consolas", 9), wraplength=1050,
+        ).pack(anchor="w")
+        buttons = ttk.Frame(parent)
+        buttons.pack(fill="x", pady=5)
+        self.operation_run_button = ttk.Button(
+            buttons, text="Run", command=self.run_operation,
+        )
+        self.operation_run_button.pack(side="left")
+        self.operation_stop_button = ttk.Button(
+            buttons, text="Stop", command=self.stop_operation, state="disabled",
+        )
+        self.operation_stop_button.pack(side="left", padx=7)
+        ttk.Button(
+            buttons, text="Clear output",
+            command=lambda: self._replace_operation_output(""),
+        ).pack(side="left")
+        self.operation_state_var = tk.StringVar(value="Idle")
+        ttk.Label(buttons, textvariable=self.operation_state_var).pack(side="left", padx=12)
+        output_frame = ttk.Labelframe(parent, text="Output", padding=5)
+        output_frame.pack(fill="both", expand=True, pady=(5, 0))
+        self.operation_output = tk.Text(
+            output_frame, wrap="none", font=("Consolas", 9), state="disabled",
+        )
+        operation_scroll = ttk.Scrollbar(
+            output_frame, orient="vertical", command=self.operation_output.yview,
+        )
+        self.operation_output.configure(yscrollcommand=operation_scroll.set)
+        operation_scroll.pack(side="right", fill="y")
+        self.operation_output.pack(fill="both", expand=True)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(2, weight=1)
+        self._refresh_operation_form()
+
+    def _refresh_operation_form(self) -> None:
+        for widget in self.operation_field_frame.winfo_children():
+            widget.destroy()
+        self.operation_fields.clear()
+        operation = self.operation_by_name[self.operation_var.get()]
+        self.operation_description.configure(
+            text="{} — {}".format(operation["group"], operation["label"])
+        )
+        for row, field in enumerate(operation["fields"]):
+            ttk.Label(self.operation_field_frame, text=field["label"] + ":").grid(
+                row=row, column=0, sticky="w", padx=(0, 8), pady=4,
+            )
+            default = field.get("default", "")
+            if field["name"] == "input":
+                default = self.input_path.name
+            variable = tk.StringVar(value=default)
+            variable.trace_add("write", lambda *_args: self._update_operation_preview())
+            entry = ttk.Entry(self.operation_field_frame, textvariable=variable, width=48)
+            entry.grid(row=row, column=1, sticky="ew", pady=4)
+            if field.get("help"):
+                ttk.Label(
+                    self.operation_field_frame, text=field["help"], style="Muted.TLabel",
+                ).grid(row=row, column=2, sticky="w", padx=8)
+            self.operation_fields[field["name"]] = variable
+        self.operation_field_frame.columnconfigure(1, weight=1)
+        self._update_operation_preview()
+
+    def _operation_values(self) -> Dict[str, str]:
+        return {name: variable.get() for name, variable in self.operation_fields.items()}
+
+    def _update_operation_preview(self) -> None:
+        try:
+            preview = format_operation_command(
+                self.operation_var.get(), self._operation_values(),
+            )
+        except ValueError as exc:
+            preview = "Incomplete: {}".format(exc)
+        self.operation_preview_var.set(preview)
+
+    def _choose_operation_directory(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Select JOREK run directory", initialdir=self.operation_cwd_var.get(),
+        )
+        if selected:
+            self.operation_cwd_var.set(selected)
+
+    def _append_operation_output(self, text: str) -> None:
+        self.operation_output.configure(state="normal")
+        self.operation_output.insert("end", text)
+        self.operation_output.see("end")
+        self.operation_output.configure(state="disabled")
+
+    def _replace_operation_output(self, text: str) -> None:
+        self.operation_output.configure(state="normal")
+        self.operation_output.delete("1.0", "end")
+        self.operation_output.insert("1.0", text)
+        self.operation_output.configure(state="disabled")
+
+    def run_operation(self) -> None:
+        if self.operation_process is not None:
+            messagebox.showinfo("Operation running", "Wait for or stop the current operation first.")
+            return
+        cwd = Path(self.operation_cwd_var.get()).expanduser().resolve()
+        if not cwd.is_dir():
+            messagebox.showerror("Invalid directory", "Working directory not found:\n{}".format(cwd))
+            return
+        operation = self.operation_var.get()
+        try:
+            command = jorek_operation_command(operation, self._operation_values())
+            preview = format_operation_command(operation, self._operation_values())
+        except ValueError as exc:
+            messagebox.showerror("Invalid operation", str(exc))
+            return
+        self._append_operation_output("\n$ cd {}\n$ {}\n".format(cwd, preview))
+        try:
+            self.operation_process = subprocess.Popen(
+                command, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                universal_newlines=True, bufsize=1, start_new_session=True,
+            )
+        except OSError as exc:
+            self.operation_process = None
+            messagebox.showerror("Cannot start operation", str(exc))
+            return
+        process = self.operation_process
+        self.operation_run_button.configure(state="disabled")
+        self.operation_stop_button.configure(state="normal")
+        self.operation_state_var.set("Running {}".format(operation))
+        threading.Thread(
+            target=self._read_operation_output, args=(process,), daemon=True,
+        ).start()
+        self.after(100, self._poll_operation_output)
+
+    def _read_operation_output(self, process) -> None:
+        if process.stdout is not None:
+            for line in iter(process.stdout.readline, ""):
+                self.operation_queue.put(("output", line))
+            process.stdout.close()
+        self.operation_queue.put(("done", process.wait()))
+
+    def _poll_operation_output(self) -> None:
+        finished = None
+        while True:
+            try:
+                kind, payload = self.operation_queue.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "output":
+                self._append_operation_output(payload)
+            else:
+                finished = payload
+        if finished is None:
+            if self.operation_process is not None:
+                self.after(100, self._poll_operation_output)
+            return
+        self._append_operation_output("\n[process exited with status {}]\n".format(finished))
+        self.operation_process = None
+        self.operation_run_button.configure(state="normal")
+        self.operation_stop_button.configure(state="disabled")
+        self.operation_state_var.set(
+            "Completed" if finished == 0 else "Failed (status {})".format(finished)
+        )
+
+    def stop_operation(self) -> None:
+        process = self.operation_process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            process.terminate()
+        self.operation_state_var.set("Stopping...")
+
     def choose_input(self) -> None:
         selected = filedialog.askopenfilename(title="Select JOREK input", initialdir=self.input_path.parent)
         if selected:
@@ -473,6 +690,9 @@ class JorekPanel(tk.Tk):
         self.comparison_input_path = None
         self.comparison_parameters = []
         self.path_label.configure(text=str(self.input_path))
+        self.operation_cwd_var.set(str(self.input_path.parent))
+        if "input" in self.operation_fields:
+            self.operation_fields["input"].set(self.input_path.name)
         self.parameter_tree.configure(displaycolumns=("line", "name", "value", "si_value", "section"))
         self.parameter_tree.heading("value", text=f"JOREK value ({self.input_path.name})")
         self.parameter_tree.heading("si_value", text="SI value")
@@ -493,6 +713,9 @@ class JorekPanel(tk.Tk):
         self.comparison_input_path = second_path.resolve()
         self.comparison_parameters = second_parameters
         self.path_label.configure(text=f"A: {self.input_path}   |   B: {self.comparison_input_path}")
+        self.operation_cwd_var.set(str(self.input_path.parent))
+        if "input" in self.operation_fields:
+            self.operation_fields["input"].set(self.input_path.name)
         self.parameter_tree.configure(
             displaycolumns=("line", "name", "value", "compare_value", "si_value", "compare_si_value", "section")
         )

@@ -4,6 +4,7 @@ import bisect
 import math
 import os
 import re
+import shlex
 import tempfile
 from pathlib import Path
 
@@ -27,6 +28,147 @@ HEAT_SOURCE_SCALAR_PARAMETERS = {
     "heatsource_e": "heatsource_e_file",
     "heatsource": "heatsource_file",
 }
+
+# Curated operations exposed by both the desktop and browser panels.  Keeping
+# their argument schema here prevents the two front ends from drifting apart.
+JOREK_OPERATIONS = (
+    {"name": "cvt2vtk", "label": "VTK: all variables", "group": "HDF5 to VTK",
+     "fields": ("input",)},
+    {"name": "cvt2vtkno0", "label": "VTK: omit n=0", "group": "HDF5 to VTK",
+     "fields": ("input",)},
+    {"name": "cvt2vtksi", "label": "VTK: SI units", "group": "HDF5 to VTK",
+     "fields": ("input",)},
+    {"name": "cvt2vtkno0si", "label": "VTK: omit n=0, SI units", "group": "HDF5 to VTK",
+     "fields": ("input",)},
+    {"name": "cvt2vtk_iplane", "label": "VTK: plane", "group": "HDF5 to VTK",
+     "fields": ("i_plane", "input", "only")},
+    {"name": "cvt2vtksi_iplane", "label": "VTK: plane, SI units", "group": "HDF5 to VTK",
+     "fields": ("i_plane", "input", "only")},
+    {"name": "cvt2vtkno0_iplane", "label": "VTK: plane, omit n=0", "group": "HDF5 to VTK",
+     "fields": ("i_plane", "input", "only")},
+    {"name": "cvt2vtk_iplane_nsub", "label": "VTK: plane with nsub", "group": "HDF5 to VTK",
+     "fields": ("i_plane", "nsub", "input", "only")},
+    {"name": "cvt2vtk_itor", "label": "VTK: toroidal index", "group": "HDF5 to VTK",
+     "fields": ("i_tor", "input", "only")},
+    {"name": "cvt2vtk_itor_iplane", "label": "VTK: toroidal index + plane",
+     "group": "HDF5 to VTK", "fields": ("i_tor", "i_plane", "input", "only")},
+    {"name": "jorek_post_all", "label": "Post-process snapshots", "group": "Post-processing",
+     "fields": ("ids",)},
+    {"name": "jorek_poincare_all", "label": "Generate Poincare data",
+     "group": "Post-processing", "fields": ("ids", "control_file")},
+    {"name": "jorek_four_all", "label": "FFT decomposition", "group": "Post-processing",
+     "fields": ("ids", "control_file")},
+)
+
+OPERATION_FIELDS = {
+    "input": {"label": "JOREK input", "default": "input",
+              "help": "Input namelist passed to jorek2vtk."},
+    "i_plane": {"label": "Plane index", "default": "1", "integer": True, "minimum": 0},
+    "i_tor": {"label": "Toroidal index", "default": "0", "integer": True, "minimum": 0},
+    "nsub": {"label": "nsub", "default": "1", "integer": True, "minimum": 1},
+    "only": {"label": "Only step(s)", "default": "", "optional": True,
+             "help": "Optional value passed to convert2vtk.sh -only."},
+    "ids": {"label": "Snapshot IDs", "default": "", "optional": True,
+            "help": "Space-separated IDs or ? patterns; blank processes all available snapshots."},
+    "control_file": {"label": "Control/input file", "default": "input",
+                     "help": "Stdin control file used by jorek2_poincare or jorek2_four."},
+}
+
+_OPERATION_BY_NAME = {item["name"]: item for item in JOREK_OPERATIONS}
+_ID_ARGUMENT = re.compile(r"^[0-9?]+$")
+
+# Aliases cannot be invoked through a variable in Bash, so the four aliases in
+# my_bashrc are expanded explicitly.  Functions are called by name after the
+# same bashrc has been sourced.
+_OPERATION_SHELL = r'''
+source "$1"
+operation=$2
+shift 2
+case "$operation" in
+  cvt2vtk)      convert2vtk.sh -j 8 jorek2vtk "$@" ;;
+  cvt2vtkno0)   convert2vtk.sh -no0 -j 8 jorek2vtk "$@" ;;
+  cvt2vtksi)    convert2vtk.sh -si -j 8 jorek2vtk "$@" ;;
+  cvt2vtkno0si) convert2vtk.sh -no0 -si -j 8 jorek2vtk "$@" ;;
+  *) "$operation" "$@" ;;
+esac
+'''
+
+
+def operation_definitions():
+    """Return JSON-friendly command and field definitions for a panel."""
+    definitions = []
+    for operation in JOREK_OPERATIONS:
+        item = dict(operation)
+        item["fields"] = [
+            dict({"name": name}, **OPERATION_FIELDS[name]) for name in operation["fields"]
+        ]
+        definitions.append(item)
+    return definitions
+
+
+def _validated_operation_args(operation, values):
+    if operation not in _OPERATION_BY_NAME:
+        raise ValueError("Unknown JOREK operation: {}".format(operation))
+    values = values or {}
+    arguments = []
+    for field_name in _OPERATION_BY_NAME[operation]["fields"]:
+        field = OPERATION_FIELDS[field_name]
+        value = str(values.get(field_name, field.get("default", ""))).strip()
+        if not value:
+            if field.get("optional"):
+                continue
+            raise ValueError("{} is required".format(field["label"]))
+        if field.get("integer"):
+            try:
+                number = int(value)
+            except ValueError:
+                raise ValueError("{} must be an integer".format(field["label"]))
+            if number < field.get("minimum", number):
+                raise ValueError(
+                    "{} must be at least {}".format(field["label"], field["minimum"])
+                )
+            value = str(number)
+        if field_name == "ids":
+            try:
+                id_arguments = shlex.split(value)
+            except ValueError as exc:
+                raise ValueError("Invalid snapshot IDs: {}".format(exc))
+            invalid = [item for item in id_arguments if not _ID_ARGUMENT.match(item)]
+            if invalid:
+                raise ValueError(
+                    "Snapshot IDs may contain only digits and ?: {}".format(invalid[0])
+                )
+            arguments.extend(id_arguments)
+        else:
+            arguments.append(value)
+    if operation in {"jorek_poincare_all", "jorek_four_all"}:
+        control_file = arguments.pop()
+        arguments.extend(["-fn", control_file])
+    return arguments
+
+
+def jorek_operation_command(operation, values=None, bashrc_path=None):
+    """Build a safe argv list for one curated my_bashrc operation."""
+    arguments = _validated_operation_args(operation, values)
+    if bashrc_path is None:
+        bashrc_path = os.environ.get(
+            "JOREK_BASHRC", str(Path(__file__).resolve().parent.parent / "my_bashrc")
+        )
+    bashrc_path = Path(bashrc_path).expanduser().resolve()
+    if not bashrc_path.is_file():
+        raise ValueError("JOREK bashrc not found: {}".format(bashrc_path))
+    return [
+        "bash", "--noprofile", "--norc", "-O", "expand_aliases", "-c",
+        _OPERATION_SHELL, "jorek-panel", str(bashrc_path), operation,
+    ] + arguments
+
+
+def format_operation_command(operation, values=None):
+    """Return the concise command users recognize from my_bashrc."""
+    return " ".join(
+        shlex.quote(item)
+        for item in [operation] + _validated_operation_args(operation, values)
+    )
 
 
 def parse_float(value):

@@ -5,6 +5,9 @@ import argparse
 import io
 import json
 import math
+import os
+import signal
+import subprocess
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -19,7 +22,8 @@ from scipy.constants import Boltzmann, elementary_charge, mu_0, proton_mass
 from jorek_core import (
     GAMMA, HEAT_SOURCE_FILE_PARAMETERS, HEAT_TRANSPORT_FILE_PARAMETERS,
     canonical_value, density_constants, inline_boundary, interpolate,
-    normalization_constants, parameter_map, parse_float, parse_namelist,
+    format_operation_command, jorek_operation_command, normalization_constants,
+    operation_definitions, parameter_map, parse_float, parse_namelist,
     read_numeric_file, update_parameter, value_in_si,
 )
 
@@ -40,16 +44,17 @@ PLOT_CHI = r"$\chi\;(\mathrm{m^2\,s^{-1}})$"
 HTML = r"""<!doctype html>
 <html><head><meta charset="utf-8"><title>JOREK Input Explorer</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none!important}#parameters:not(.hidden){height:calc(100vh - 100px);box-sizing:border-box;display:flex;flex-direction:column}#parameters .scroll{flex:1 1 auto;max-height:none;min-height:0}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex:0 0 auto}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px;align-items:stretch}.profiles>div:last-child{display:flex;flex-direction:column;min-height:0}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{display:block;width:100%;height:auto;background:white;flex:0 0 auto}.plot:not([src]){display:none}.preview{min-height:220px;flex:1 1 auto;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px;box-sizing:border-box}.edit{border:0;background:#2463a9;color:white;border-radius:4px;padding:4px 8px;cursor:pointer}.note{color:#607089;font-size:12px}</style></head>
+:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none!important}#parameters:not(.hidden){height:calc(100vh - 100px);box-sizing:border-box;display:flex;flex-direction:column}#parameters .scroll{flex:1 1 auto;max-height:none;min-height:0}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex:0 0 auto}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px;align-items:stretch}.profiles>div:last-child{display:flex;flex-direction:column;min-height:0}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{display:block;width:100%;height:auto;background:white;flex:0 0 auto}.plot:not([src]){display:none}.preview{min-height:220px;flex:1 1 auto;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px;box-sizing:border-box}.edit,.run{border:0;background:#2463a9;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.stop{border:0;background:#b42318;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.edit:disabled,.run:disabled,.stop:disabled{opacity:.45;cursor:default}.note{color:#607089;font-size:12px}.operation-grid{display:grid;grid-template-columns:180px minmax(260px,520px) 1fr;gap:8px;align-items:center}.operation-grid input,.operation-grid select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}.command{font:13px ui-monospace,monospace;background:#eef2f7;padding:9px;border-radius:5px;margin:10px 0}.operation-output{height:calc(100vh - 390px);min-height:260px}</style></head>
 <body><header><h1>JOREK Input Explorer</h1><span id="paths"></span></header>
-<div class="tabs"><button class="active" data-tab="parameters">Parameters</button><button data-tab="profiles">Referenced profiles</button></div>
+<div class="tabs"><button class="active" data-tab="parameters">Parameters</button><button data-tab="profiles">Referenced profiles</button><button data-tab="operations">Convert / post-process</button></div>
 <section id="parameters" class="panel"><div class="controls"><label>Filter <input id="filter"></label><span class="note">Changed or missing values are highlighted.</span></div><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section>
 <section id="profiles" class="panel hidden"><div class="profiles"><div><h3>Profiles</h3><div class="profile-list" id="profileList"></div></div><div><div class="controls"><label>x min <input id="xmin" size="8"></label><label>x max <input id="xmax" size="8"></label><button id="apply">Apply</button><button id="reset">Reset</button></div><img id="plot" class="plot"><div id="preview" class="preview">Select a profile.</div></div></div></section>
+<section id="operations" class="panel hidden"><div class="operation-grid"><label for="operationSelect">Operation</label><select id="operationSelect"></select><span id="operationNote" class="note"></span><span>Working directory</span><code id="operationCwd"></code><span class="note">The directory containing input A.</span></div><div id="operationFields" class="operation-grid" style="margin-top:12px"></div><div id="commandPreview" class="command"></div><div class="controls"><button id="runOperation" class="run">Run</button><button id="stopOperation" class="stop">Stop</button><button id="clearOperation">Clear output</button><span id="operationStatus" class="note">Idle</span></div><pre id="operationOutput" class="preview operation-output"></pre></section>
 <script>
-let state, currentProfile;
+let state, currentProfile, operationTimer;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
-async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();if(currentProfile){refreshPlot();refreshPreview()}}
+async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');document.getElementById('operationCwd').textContent=state.operation_directory;if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();renderOperationSelector();if(currentProfile){refreshPlot();refreshPreview()}pollOperation()}
 function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>[r.line,r.name,r.a,r.b,r.si_a,r.si_b,r.section].join(' ').toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
 document.getElementById('filter').oninput=renderTable;
 async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='--'&&row.b!=='--'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='--')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
@@ -57,7 +62,17 @@ function renderProfiles(){document.getElementById('profileList').innerHTML=state
 async function showProfile(key,button){currentProfile=decodeURIComponent(key);document.getElementById('xmin').value='';document.getElementById('xmax').value='';document.querySelectorAll('.profile-list button').forEach(x=>x.classList.remove('selected'));button.classList.add('selected');refreshPlot();refreshPreview()}
 async function refreshPreview(){if(!currentProfile)return;let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
 function refreshPlot(){if(!currentProfile)return;let p=new URLSearchParams({profile:currentProfile,t:Date.now()});let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(lo&&hi){p.set('xmin',lo);p.set('xmax',hi)}document.getElementById('plot').src='/api/plot?'+p}
-document.getElementById('apply').onclick=()=>{let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(!lo&&!hi){refreshPlot();return}if(!lo||!hi){alert('Fill in both x limits, or clear both boxes for automatic limits.');return}let a=Number(lo),b=Number(hi);if(!isFinite(a)||!isFinite(b)||a>=b){alert('Enter numeric x limits with the minimum smaller than the maximum.');return}refreshPlot()};document.getElementById('reset').onclick=()=>{document.getElementById('xmin').value='';document.getElementById('xmax').value='';refreshPlot()};load();
+document.getElementById('apply').onclick=()=>{let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(!lo&&!hi){refreshPlot();return}if(!lo||!hi){alert('Fill in both x limits, or clear both boxes for automatic limits.');return}let a=Number(lo),b=Number(hi);if(!isFinite(a)||!isFinite(b)||a>=b){alert('Enter numeric x limits with the minimum smaller than the maximum.');return}refreshPlot()};document.getElementById('reset').onclick=()=>{document.getElementById('xmin').value='';document.getElementById('xmax').value='';refreshPlot()};
+function renderOperationSelector(){let s=document.getElementById('operationSelect'),selected=s.value||state.operations[0].name;s.innerHTML=state.operations.map(o=>`<option value="${esc(o.name)}">${esc(o.label)} (${esc(o.name)})</option>`).join('');s.value=state.operations.some(o=>o.name===selected)?selected:state.operations[0].name;renderOperationFields()}
+function renderOperationFields(){let op=state.operations.find(o=>o.name===document.getElementById('operationSelect').value);document.getElementById('operationNote').textContent=op.group;document.getElementById('operationFields').innerHTML=op.fields.map(f=>`<label for="op_${esc(f.name)}">${esc(f.label)}</label><input id="op_${esc(f.name)}" data-field="${esc(f.name)}" value="${esc(f.name==='input'?state.input_name:f.default||'')}"><span class="note">${esc(f.help||'')}</span>`).join('');document.querySelectorAll('#operationFields input').forEach(x=>x.oninput=updateOperationPreview);updateOperationPreview()}
+function operationValues(){let v={};document.querySelectorAll('#operationFields input').forEach(x=>v[x.dataset.field]=x.value);return v}
+function updateOperationPreview(){let name=document.getElementById('operationSelect').value,values=operationValues(),args=[];Object.keys(values).forEach(key=>{let value=values[key].trim();if(!value)return;if(key==='control_file')args.push('-fn',value);else args.push(value)});document.getElementById('commandPreview').textContent='$ '+name+(args.length?' '+args.join(' '):'')}
+document.getElementById('operationSelect').onchange=renderOperationFields;
+document.getElementById('runOperation').onclick=async()=>{let res=await fetch('/api/operation/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:document.getElementById('operationSelect').value,values:operationValues()})}),out=await res.json();if(!res.ok){alert(out.error);return}pollOperation()};
+document.getElementById('stopOperation').onclick=async()=>{let res=await fetch('/api/operation/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollOperation()};
+document.getElementById('clearOperation').onclick=async()=>{await fetch('/api/operation/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});pollOperation()};
+async function pollOperation(){clearTimeout(operationTimer);let job=await (await fetch('/api/operation')).json(),output=document.getElementById('operationOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('operationStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping';document.getElementById('runOperation').disabled=running;document.getElementById('stopOperation').disabled=!running;if(running)operationTimer=setTimeout(pollOperation,1000)}
+load();
 </script></body></html>"""
 
 
@@ -70,6 +85,11 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 class BrowserApp(object):
     def __init__(self, first, second=None):
         self.paths = [first.resolve()] + ([second.resolve()] if second else [])
+        self.operation_lock = threading.Lock()
+        self.operation_process = None
+        self.operation_job = {
+            "status": "idle", "operation": None, "exit_code": None, "log": "",
+        }
         self.reload()
 
     def reload(self):
@@ -99,7 +119,12 @@ class BrowserApp(object):
                 b = "{:.8e} {}".format(constants[1][index], unit) if len(constants) == 2 and constants[1] else "--"
                 rows.insert(index, {"key": name.casefold(), "name": name, "line": "--", "a": "1 unit", "b": "1 unit" if len(constants)==2 else "--", "si_a": a, "si_b": b, "section": "Derived constants", "different": len(constants)==2 and a!=b, "editable": False})
         return {"paths": [str(p) for p in self.paths], "compare": len(self.paths) == 2,
-                "parameters": rows, "profiles": [{"key": k, "name": v["name"], "files": v["files"]} for k,v in self.profiles.items()]}
+                "parameters": rows,
+                "profiles": [{"key": k, "name": v["name"], "files": v["files"]}
+                             for k, v in self.profiles.items()],
+                "operations": operation_definitions(),
+                "operation_directory": str(self.paths[0].parent),
+                "input_name": self.paths[0].name}
 
     def _profiles(self):
         result = {}
@@ -151,6 +176,65 @@ class BrowserApp(object):
             raise ValueError("Parameter is not present in that input")
         update_parameter(self.paths[index], int(item["line"]), str(item["name"]), value.strip())
         self.reload()
+
+    def operation_state(self):
+        with self.operation_lock:
+            return dict(self.operation_job)
+
+    def start_operation(self, operation, values):
+        command = jorek_operation_command(operation, values)
+        preview = format_operation_command(operation, values)
+        with self.operation_lock:
+            if self.operation_process is not None:
+                raise ValueError("Another operation is already running")
+            try:
+                process = subprocess.Popen(
+                    command, cwd=str(self.paths[0].parent), stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                raise ValueError("Cannot start operation: {}".format(exc))
+            self.operation_process = process
+            self.operation_job = {
+                "status": "running", "operation": operation, "exit_code": None,
+                "log": "$ cd {}\n$ {}\n".format(self.paths[0].parent, preview),
+            }
+        threading.Thread(
+            target=self._capture_operation, args=(process,), daemon=True,
+        ).start()
+
+    def _capture_operation(self, process):
+        if process.stdout is not None:
+            for line in iter(process.stdout.readline, ""):
+                with self.operation_lock:
+                    self.operation_job["log"] = (
+                        self.operation_job["log"] + line
+                    )[-200000:]
+            process.stdout.close()
+        return_code = process.wait()
+        with self.operation_lock:
+            self.operation_job["exit_code"] = return_code
+            self.operation_job["status"] = "completed" if return_code == 0 else "failed"
+            self.operation_job["log"] += "\n[process exited with status {}]\n".format(
+                return_code
+            )
+            self.operation_process = None
+
+    def stop_operation(self):
+        with self.operation_lock:
+            process = self.operation_process
+            if process is None or process.poll() is not None:
+                raise ValueError("No operation is running")
+            self.operation_job["status"] = "stopping"
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            process.terminate()
+
+    def clear_operation_log(self):
+        with self.operation_lock:
+            self.operation_job["log"] = ""
 
     def converted(self, key, rows, side):
         valid = [row for row in rows if len(row) >= 2]
@@ -273,6 +357,11 @@ def make_handler(app):
             try:
                 if parsed.path == "/": return self.send(200, HTML.encode("utf-8"), "text/html; charset=utf-8")
                 if parsed.path == "/api/state": return self.send(200, json.dumps(app.state(), ensure_ascii=False).encode("utf-8"), "application/json")
+                if parsed.path == "/api/operation":
+                    return self.send(
+                        200, json.dumps(app.operation_state()).encode("utf-8"),
+                        "application/json",
+                    )
                 if parsed.path == "/api/preview":
                     key = query.get("profile", [None])[0]
                     if key not in app.profiles:
@@ -299,7 +388,17 @@ def make_handler(app):
         def do_POST(self):
             try:
                 length=int(self.headers.get("Content-Length","0")); data=json.loads(self.rfile.read(length).decode("utf-8"))
-                if urlparse(self.path).path != "/api/edit": return self.send(404,b"{}","application/json")
+                path = urlparse(self.path).path
+                if path == "/api/operation/run":
+                    app.start_operation(data["operation"], data.get("values", {}))
+                    return self.send(202, b'{"ok":true}', "application/json")
+                if path == "/api/operation/stop":
+                    app.stop_operation()
+                    return self.send(200, b'{"ok":true}', "application/json")
+                if path == "/api/operation/clear":
+                    app.clear_operation_log()
+                    return self.send(200, b'{"ok":true}', "application/json")
+                if path != "/api/edit": return self.send(404,b"{}","application/json")
                 app.edit(data["key"],data["side"],data["value"])
                 self.send(200,b'{"ok":true}',"application/json")
             except Exception as exc:
