@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Browser-based JOREK input explorer; requires no Tk or graphical display."""
+"""Browser-based JOREK input, processing, and visualization panel."""
 
 import argparse
 import io
@@ -8,6 +8,7 @@ import math
 import os
 import signal
 import subprocess
+import tempfile
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -22,8 +23,9 @@ from scipy.constants import Boltzmann, elementary_charge, mu_0, proton_mass
 from jorek_core import (
     GAMMA, HEAT_SOURCE_FILE_PARAMETERS, HEAT_TRANSPORT_FILE_PARAMETERS,
     canonical_value, density_constants, inline_boundary, interpolate,
-    format_operation_command, jorek_operation_command, normalization_constants,
-    operation_definitions, parameter_map, parse_float, parse_namelist,
+    format_operation_command, format_plot_command, jorek_operation_command,
+    jorek_plot_command, normalization_constants, operation_definitions,
+    parameter_map, parse_float, parse_namelist, plot_definitions,
     read_numeric_file, update_parameter, value_in_si,
 )
 
@@ -42,19 +44,20 @@ PLOT_CHI = r"$\chi\;(\mathrm{m^2\,s^{-1}})$"
 
 
 HTML = r"""<!doctype html>
-<html><head><meta charset="utf-8"><title>JOREK Input Explorer</title>
+<html><head><meta charset="utf-8"><title>MHD Control Panel</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none!important}#parameters:not(.hidden){height:calc(100vh - 100px);box-sizing:border-box;display:flex;flex-direction:column}#parameters .scroll{flex:1 1 auto;max-height:none;min-height:0}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex:0 0 auto}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px;align-items:stretch}.profiles>div:last-child{display:flex;flex-direction:column;min-height:0}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{display:block;width:100%;height:auto;background:white;flex:0 0 auto}.plot:not([src]){display:none}.preview{min-height:220px;flex:1 1 auto;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px;box-sizing:border-box}.edit,.run{border:0;background:#2463a9;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.stop{border:0;background:#b42318;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.edit:disabled,.run:disabled,.stop:disabled{opacity:.45;cursor:default}.note{color:#607089;font-size:12px}.operation-grid{display:grid;grid-template-columns:180px minmax(260px,520px) 1fr;gap:8px;align-items:center}.operation-grid input,.operation-grid select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}.command{font:13px ui-monospace,monospace;background:#eef2f7;padding:9px;border-radius:5px;margin:10px 0}.operation-output{height:calc(100vh - 390px);min-height:260px}</style></head>
-<body><header><h1>JOREK Input Explorer</h1><span id="paths"></span></header>
-<div class="tabs"><button class="active" data-tab="parameters">Parameters</button><button data-tab="profiles">Referenced profiles</button><button data-tab="operations">Convert / post-process</button></div>
+:root{font-family:system-ui,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}header{background:#172a46;color:white;padding:14px 20px;display:flex;gap:18px;align-items:center}header h1{font-size:20px;margin:0}header span{font-size:12px;opacity:.8}.tabs{display:flex;padding:12px 18px 0;gap:5px}.tabs button{padding:9px 16px;border:0;border-radius:7px 7px 0 0;background:#dce3ef;cursor:pointer}.tabs .active{background:white}.panel{margin:0 18px 18px;background:white;padding:14px;border-radius:0 8px 8px 8px;box-shadow:0 2px 12px #1b31501a}.hidden{display:none!important}#parameters:not(.hidden){height:calc(100vh - 100px);box-sizing:border-box;display:flex;flex-direction:column}#parameters .scroll{flex:1 1 auto;max-height:none;min-height:0}.controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex:0 0 auto}.controls input,.controls select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#e8edf5;text-align:left}th,td{padding:6px 8px;border-bottom:1px solid #e4e8ef;vertical-align:top}tr.changed{background:#fff3bf}tr:hover{background:#edf5ff}.scroll{overflow:auto}.profiles{display:grid;grid-template-columns:minmax(260px,28%) 1fr;gap:14px;align-items:stretch}.profiles>div:last-child{display:flex;flex-direction:column;min-height:0}.profile-list button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #e2e6ed;background:white;padding:8px;cursor:pointer}.profile-list button:hover,.profile-list button.selected{background:#e8f1ff}.plot{display:block;width:100%;height:auto;background:white;flex:0 0 auto}.plot:not([src]){display:none}.preview{min-height:220px;flex:1 1 auto;overflow:auto;background:#111827;color:#dbeafe;padding:10px;font:12px ui-monospace,monospace;white-space:pre;margin-top:8px;box-sizing:border-box}.edit,.run{border:0;background:#2463a9;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.stop{border:0;background:#b42318;color:white;border-radius:4px;padding:6px 10px;cursor:pointer}.edit:disabled,.run:disabled,.stop:disabled{opacity:.45;cursor:default}.note{color:#607089;font-size:12px}.operation-grid{display:grid;grid-template-columns:180px minmax(260px,520px) 1fr;gap:8px;align-items:center}.operation-grid input,.operation-grid select{padding:7px;border:1px solid #b8c2d3;border-radius:5px}.command{font:13px ui-monospace,monospace;background:#eef2f7;padding:9px;border-radius:5px;margin:10px 0}.operation-output{height:calc(100vh - 390px);min-height:260px}.viz-layout{display:grid;grid-template-columns:minmax(360px,42%) 1fr;gap:14px}.viz-image{display:block;max-width:100%;max-height:58vh;margin:auto}.viz-image:not([src]){display:none}.viz-log{min-height:100px;max-height:180px}</style></head>
+<body><header><h1>MHD Control Panel</h1><span id="paths"></span></header>
+<div class="tabs"><button class="active" data-tab="parameters">Parameters</button><button data-tab="profiles">Referenced profiles</button><button data-tab="operations">Convert / post-process</button><button data-tab="visualization">Visualize results</button></div>
 <section id="parameters" class="panel"><div class="controls"><label>Filter <input id="filter"></label><span class="note">Changed or missing values are highlighted.</span></div><div class="scroll"><table><thead><tr id="head"></tr></thead><tbody id="rows"></tbody></table></div></section>
 <section id="profiles" class="panel hidden"><div class="profiles"><div><h3>Profiles</h3><div class="profile-list" id="profileList"></div></div><div><div class="controls"><label>x min <input id="xmin" size="8"></label><label>x max <input id="xmax" size="8"></label><button id="apply">Apply</button><button id="reset">Reset</button></div><img id="plot" class="plot"><div id="preview" class="preview">Select a profile.</div></div></div></section>
 <section id="operations" class="panel hidden"><div class="operation-grid"><label for="operationSelect">Operation</label><select id="operationSelect"></select><span id="operationNote" class="note"></span><span>Working directory</span><code id="operationCwd"></code><span class="note">The directory containing input A.</span></div><div id="operationFields" class="operation-grid" style="margin-top:12px"></div><div id="commandPreview" class="command"></div><div class="controls"><button id="runOperation" class="run">Run</button><button id="stopOperation" class="stop">Stop</button><button id="clearOperation">Clear output</button><span id="operationStatus" class="note">Idle</span></div><pre id="operationOutput" class="preview operation-output"></pre></section>
+<section id="visualization" class="panel hidden"><div class="viz-layout"><div><div class="operation-grid"><label for="vizSelect">Plot utility</label><select id="vizSelect"></select><span id="vizNote" class="note"></span><span>Working directory</span><code id="vizCwd"></code><span class="note">The directory containing input A.</span></div><div id="vizFields" class="operation-grid" style="margin-top:12px"></div><div id="vizPreview" class="command"></div><div class="controls"><button id="runViz" class="run">Generate</button><button id="stopViz" class="stop">Stop</button><span id="vizStatus" class="note">Idle</span></div><pre id="vizOutput" class="preview viz-log"></pre></div><div><div class="controls"><button id="previousViz">Previous</button><button id="nextViz">Next</button><span id="vizImageStatus" class="note">No captured figure</span></div><img id="vizImage" class="viz-image"></div></div></section>
 <script>
-let state, currentProfile, operationTimer;
+let state, currentProfile, operationTimer, vizTimer, vizIndex=0, vizCount=0;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
-async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');document.getElementById('operationCwd').textContent=state.operation_directory;if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();renderOperationSelector();if(currentProfile){refreshPlot();refreshPreview()}pollOperation()}
+async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');document.getElementById('operationCwd').textContent=state.operation_directory;document.getElementById('vizCwd').textContent=state.operation_directory;if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();renderOperationSelector();renderVizSelector();if(currentProfile){refreshPlot();refreshPreview()}pollOperation();pollViz()}
 function renderTable(){let cmp=state.compare;document.getElementById('head').innerHTML=['Line','Parameter','JOREK A'].concat(cmp?['JOREK B']:[]).concat(['SI A']).concat(cmp?['SI B']:[]).concat(['Section','']).map(x=>`<th>${x}</th>`).join('');let q=document.getElementById('filter').value.toLowerCase();document.getElementById('rows').innerHTML=state.parameters.filter(r=>[r.line,r.name,r.a,r.b,r.si_a,r.si_b,r.section].join(' ').toLowerCase().includes(q)).map(r=>`<tr class="${r.different?'changed':''}"><td>${esc(r.line)}</td><td>${esc(r.name)}</td><td>${esc(r.a)}</td>${cmp?`<td>${esc(r.b)}</td>`:''}<td>${esc(r.si_a)}</td>${cmp?`<td>${esc(r.si_b)}</td>`:''}<td>${esc(r.section)}</td><td>${r.editable?`<button class="edit" onclick="editParam('${esc(r.key)}')">Edit</button>`:''}</td></tr>`).join('')}
 document.getElementById('filter').oninput=renderTable;
 async function editParam(key){let row=state.parameters.find(r=>r.key===key),side='a';if(state.compare&&row.a!=='--'&&row.b!=='--'){let choice=prompt('Edit which input? Enter A or B. Cancel closes without editing.','A');if(choice===null)return;choice=choice.trim().toLowerCase();if(choice!=='a'&&choice!=='b'){alert('Enter A or B.');return}side=choice}else if(row.a==='--')side='b';let old=side==='a'?row.a:row.b,v=prompt(`New value for ${row.name} in input ${side.toUpperCase()}:`,old);if(v===null)return;let res=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,side,value:v})});let out=await res.json();if(!res.ok){alert(out.error);return}await load()}
@@ -72,6 +75,17 @@ document.getElementById('runOperation').onclick=async()=>{let res=await fetch('/
 document.getElementById('stopOperation').onclick=async()=>{let res=await fetch('/api/operation/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollOperation()};
 document.getElementById('clearOperation').onclick=async()=>{await fetch('/api/operation/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});pollOperation()};
 async function pollOperation(){clearTimeout(operationTimer);let job=await (await fetch('/api/operation')).json(),output=document.getElementById('operationOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('operationStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping';document.getElementById('runOperation').disabled=running;document.getElementById('stopOperation').disabled=!running;if(running)operationTimer=setTimeout(pollOperation,1000)}
+function renderVizSelector(){let s=document.getElementById('vizSelect'),selected=s.value||state.plots[0].name;s.innerHTML=state.plots.map(p=>`<option value="${esc(p.name)}" ${p.available?'':'disabled'}>${esc(p.label)} (${esc(p.script)})${p.available?'':' — unavailable'}</option>`).join('');s.value=state.plots.some(p=>p.name===selected&&p.available)?selected:state.plots.find(p=>p.available).name;renderVizFields()}
+function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let choices=f.boolean?['true','false']:(f.choices||null),control=choices?`<select id="viz_${esc(f.name)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="viz_${esc(f.name)}" data-field="${esc(f.name)}" value="${esc(f.default||'')}">`;return `<label for="viz_${esc(f.name)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>x.oninput=updateVizPreview);document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
+function vizValues(){let v={};document.querySelectorAll('#vizFields [data-field]').forEach(x=>v[x.dataset.field]=x.value);return v}
+function updateVizPreview(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value),values=vizValues(),args=[];p.fields.forEach(f=>{let value=(values[f.name]||'').trim();if(!value)return;if(f.name==='time_multiplier'&&['$time2si','time2si','$t_jorek','t_jorek'].includes(value.toLowerCase())&&state.time2si!==null)value=String(state.time2si);if(f.boolean){let yes=['1','true','yes','on'].includes(value.toLowerCase());if(f.boolean==='flag'){if(yes)args.push(f.flag)}else if(f.boolean==='either')args.push(yes?f.flag:f.false_flag);else args.push(f.flag,yes?'true':'false')}else{let flag=(p.name==='plot_live_data'&&f.name==='title')?'-title':f.flag;if(flag)args.push(flag);args.push(value)}});document.getElementById('vizPreview').textContent='$ '+p.script+(args.length?' '+args.join(' '):'')}
+document.getElementById('vizSelect').onchange=renderVizFields;
+document.getElementById('runViz').onclick=async()=>{let res=await fetch('/api/visualization/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plot:document.getElementById('vizSelect').value,values:vizValues()})}),out=await res.json();if(!res.ok){alert(out.error);return}vizIndex=0;pollViz()};
+document.getElementById('stopViz').onclick=async()=>{let res=await fetch('/api/visualization/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollViz()};
+function showViz(){let image=document.getElementById('vizImage');if(!vizCount){image.removeAttribute('src');document.getElementById('vizImageStatus').textContent='No captured figure';return}image.src='/api/visualization/image?index='+vizIndex+'&t='+Date.now();document.getElementById('vizImageStatus').textContent='Figure '+(vizIndex+1)+' of '+vizCount;document.getElementById('previousViz').disabled=document.getElementById('nextViz').disabled=vizCount<2}
+document.getElementById('previousViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex-1+vizCount)%vizCount;showViz()}};
+document.getElementById('nextViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex+1)%vizCount;showViz()}};
+async function pollViz(){clearTimeout(vizTimer);let job=await (await fetch('/api/visualization')).json(),output=document.getElementById('vizOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('vizStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping',available=state.plots.find(p=>p.name===document.getElementById('vizSelect').value).available;document.getElementById('runViz').disabled=running||!available;document.getElementById('stopViz').disabled=!running;if(job.image_count!==vizCount){vizCount=job.image_count;vizIndex=0;showViz()}if(running)vizTimer=setTimeout(pollViz,1000)}
 load();
 </script></body></html>"""
 
@@ -89,6 +103,14 @@ class BrowserApp(object):
         self.operation_process = None
         self.operation_job = {
             "status": "idle", "operation": None, "exit_code": None, "log": "",
+        }
+        self.visualization_lock = threading.Lock()
+        self.visualization_process = None
+        self.visualization_directory = None
+        self.visualization_images = []
+        self.visualization_job = {
+            "status": "idle", "plot": None, "exit_code": None, "log": "",
+            "image_count": 0,
         }
         self.reload()
 
@@ -123,8 +145,10 @@ class BrowserApp(object):
                 "profiles": [{"key": k, "name": v["name"], "files": v["files"]}
                              for k, v in self.profiles.items()],
                 "operations": operation_definitions(),
+                "plots": plot_definitions(),
                 "operation_directory": str(self.paths[0].parent),
-                "input_name": self.paths[0].name}
+                "input_name": self.paths[0].name,
+                "time2si": constants[0][1] if constants[0] else None}
 
     def _profiles(self):
         result = {}
@@ -235,6 +259,81 @@ class BrowserApp(object):
     def clear_operation_log(self):
         with self.operation_lock:
             self.operation_job["log"] = ""
+
+    def visualization_state(self):
+        with self.visualization_lock:
+            return dict(self.visualization_job)
+
+    def start_visualization(self, plot_name, values):
+        output_directory = Path(tempfile.mkdtemp(prefix="jorek-web-plots-"))
+        command = jorek_plot_command(
+            plot_name, values, output_directory, self.values[0],
+        )
+        preview = format_plot_command(plot_name, values, self.values[0])
+        with self.visualization_lock:
+            if self.visualization_process is not None:
+                raise ValueError("Another visualization is already running")
+            try:
+                process = subprocess.Popen(
+                    command, cwd=str(self.paths[0].parent), stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1,
+                    start_new_session=True,
+                )
+            except OSError as exc:
+                raise ValueError("Cannot start visualization: {}".format(exc))
+            self.visualization_process = process
+            self.visualization_directory = output_directory
+            self.visualization_images = []
+            self.visualization_job = {
+                "status": "running", "plot": plot_name, "exit_code": None,
+                "log": "$ cd {}\n$ {}\n".format(self.paths[0].parent, preview),
+                "image_count": 0,
+            }
+        threading.Thread(
+            target=self._capture_visualization, args=(process, output_directory),
+            daemon=True,
+        ).start()
+
+    def _capture_visualization(self, process, output_directory):
+        if process.stdout is not None:
+            for line in iter(process.stdout.readline, ""):
+                with self.visualization_lock:
+                    self.visualization_job["log"] = (
+                        self.visualization_job["log"] + line
+                    )[-200000:]
+            process.stdout.close()
+        return_code = process.wait()
+        images = sorted(output_directory.glob("*.png"))
+        with self.visualization_lock:
+            self.visualization_images = images
+            self.visualization_job["image_count"] = len(images)
+            self.visualization_job["exit_code"] = return_code
+            self.visualization_job["status"] = (
+                "completed" if return_code == 0 and images else "failed"
+            )
+            self.visualization_job["log"] += (
+                "\n[plot exited with status {}; {} figure(s) captured]\n"
+                .format(return_code, len(images))
+            )
+            self.visualization_process = None
+
+    def stop_visualization(self):
+        with self.visualization_lock:
+            process = self.visualization_process
+            if process is None or process.poll() is not None:
+                raise ValueError("No visualization is running")
+            self.visualization_job["status"] = "stopping"
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            process.terminate()
+
+    def visualization_image(self, index):
+        with self.visualization_lock:
+            if not 0 <= index < len(self.visualization_images):
+                raise ValueError("Unknown visualization image")
+            path = self.visualization_images[index]
+        return path.read_bytes()
 
     def converted(self, key, rows, side):
         valid = [row for row in rows if len(row) >= 2]
@@ -362,6 +461,17 @@ def make_handler(app):
                         200, json.dumps(app.operation_state()).encode("utf-8"),
                         "application/json",
                     )
+                if parsed.path == "/api/visualization":
+                    return self.send(
+                        200, json.dumps(app.visualization_state()).encode("utf-8"),
+                        "application/json",
+                    )
+                if parsed.path == "/api/visualization/image":
+                    try:
+                        index = int(query.get("index", ["0"])[0])
+                    except ValueError:
+                        return self.send(400, b"Invalid image index", "text/plain")
+                    return self.send(200, app.visualization_image(index), "image/png")
                 if parsed.path == "/api/preview":
                     key = query.get("profile", [None])[0]
                     if key not in app.profiles:
@@ -398,13 +508,19 @@ def make_handler(app):
                 if path == "/api/operation/clear":
                     app.clear_operation_log()
                     return self.send(200, b'{"ok":true}', "application/json")
+                if path == "/api/visualization/run":
+                    app.start_visualization(data["plot"], data.get("values", {}))
+                    return self.send(202, b'{"ok":true}', "application/json")
+                if path == "/api/visualization/stop":
+                    app.stop_visualization()
+                    return self.send(200, b'{"ok":true}', "application/json")
                 if path != "/api/edit": return self.send(404,b"{}","application/json")
                 app.edit(data["key"],data["side"],data["value"])
                 self.send(200,b'{"ok":true}',"application/json")
             except Exception as exc:
                 self.send(400,json.dumps({"error":str(exc)}).encode("utf-8"),"application/json")
         def log_message(self, fmt, *args):
-            print("[jorek-web] " + fmt % args)
+            print("[mhd-panel] " + fmt % args)
     return Handler
 
 
@@ -422,7 +538,7 @@ def main():
     app=BrowserApp(paths[0],paths[1] if len(paths)==2 else None)
     server=ThreadingHTTPServer((args.host,args.port),make_handler(app))
     url="http://{}:{}/".format(args.host,args.port)
-    print("JOREK browser panel: {}".format(url))
+    print("MHD Control Panel: {}".format(url))
     if args.host in {"127.0.0.1","localhost"}: print("Remote access: ssh -L {0}:127.0.0.1:{0} user@server".format(args.port))
     if args.open_browser: threading.Timer(.5,lambda:webbrowser.open(url)).start()
     try: server.serve_forever()

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Desktop viewer for a JOREK input namelist and its referenced profile files."""
+"""Desktop JOREK input, processing, and result-visualization panel."""
 
 import argparse
 import bisect
 import math
 import os
+import pickle
 import queue
 import re
 import signal
@@ -17,7 +18,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Dict, List, Optional, Set, Tuple
 
 from jorek_core import (
-    format_operation_command, jorek_operation_command, operation_definitions,
+    format_operation_command, format_plot_command, jorek_operation_command,
+    jorek_plot_command, operation_definitions, plot_definitions,
 )
 
 from scipy.constants import (
@@ -28,10 +30,11 @@ from scipy.constants import (
 )
 
 try:
+    from matplotlib import image as matplotlib_image
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
     from matplotlib.figure import Figure
 except ImportError as exc:  # pragma: no cover - handled at application startup
-    FigureCanvasTkAgg = NavigationToolbar2Tk = Figure = None
+    matplotlib_image = FigureCanvasTkAgg = NavigationToolbar2Tk = Figure = None
     MATPLOTLIB_ERROR = exc
 else:
     MATPLOTLIB_ERROR = None
@@ -327,7 +330,7 @@ def interpolate_linear(source_x: List[float], source_y: List[float], target_x: L
 class JorekPanel(tk.Tk):
     def __init__(self, input_path: Path, comparison_path: Optional[Path] = None):
         super().__init__()
-        self.title("JOREK Input Explorer")
+        self.title("MHD Control Panel")
         self.geometry("1280x800")
         self.minsize(900, 600)
         self.input_path = input_path.resolve()
@@ -341,6 +344,12 @@ class JorekPanel(tk.Tk):
         self.operation_process = None
         self.operation_queue = queue.Queue()
         self.operation_fields = {}
+        self.plot_process = None
+        self.plot_queue = queue.Queue()
+        self.plot_fields = {}
+        self.plot_images = []
+        self.plot_image_index = 0
+        self.plot_output_directory = None
         self._configure_style()
         self._build_ui()
         if comparison_path is None:
@@ -358,7 +367,7 @@ class JorekPanel(tk.Tk):
     def _build_ui(self) -> None:
         header = ttk.Frame(self, padding=(14, 12, 14, 8))
         header.pack(fill="x")
-        ttk.Label(header, text="JOREK Input Explorer", style="Title.TLabel").pack(side="left")
+        ttk.Label(header, text="MHD Control Panel", style="Title.TLabel").pack(side="left")
         ttk.Button(header, text="Open input...", command=self.choose_input).pack(side="right")
         ttk.Button(header, text="Compare two...", command=self.choose_comparison_inputs).pack(side="right", padx=6)
         self.path_label = ttk.Label(header, style="Muted.TLabel")
@@ -369,12 +378,15 @@ class JorekPanel(tk.Tk):
         params_tab = ttk.Frame(notebook, padding=8)
         profiles_tab = ttk.Frame(notebook, padding=8)
         operations_tab = ttk.Frame(notebook, padding=8)
+        plotting_tab = ttk.Frame(notebook, padding=8)
         notebook.add(params_tab, text="Parameters")
         notebook.add(profiles_tab, text="Referenced profiles")
         notebook.add(operations_tab, text="Convert / post-process")
+        notebook.add(plotting_tab, text="Visualize results")
         self._build_parameters_tab(params_tab)
         self._build_profiles_tab(profiles_tab)
         self._build_operations_tab(operations_tab)
+        self._build_plotting_tab(plotting_tab)
         ttk.Label(self, textvariable=self.status_var, anchor="w", relief="sunken", padding=5).pack(fill="x")
 
     def _build_parameters_tab(self, parent: ttk.Frame) -> None:
@@ -663,6 +675,292 @@ class JorekPanel(tk.Tk):
             process.terminate()
         self.operation_state_var.set("Stopping...")
 
+    def _build_plotting_tab(self, parent: ttk.Frame) -> None:
+        """Build controls that capture utility-script figures inside Tk."""
+        self.plot_definitions = plot_definitions()
+        self.plot_by_name = {item["name"]: item for item in self.plot_definitions}
+        top = ttk.Frame(parent)
+        top.pack(fill="x")
+        ttk.Label(top, text="Plot:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.plot_var = tk.StringVar(value=self.plot_definitions[0]["name"])
+        selector = ttk.Combobox(
+            top, textvariable=self.plot_var, state="readonly", width=32,
+            values=[item["name"] for item in self.plot_definitions],
+        )
+        selector.grid(row=0, column=1, sticky="ew")
+        selector.bind("<<ComboboxSelected>>", lambda _event: self._refresh_plot_form())
+        self.plot_description = ttk.Label(top, style="Muted.TLabel")
+        self.plot_description.grid(row=0, column=2, sticky="w", padx=10)
+        ttk.Label(top, text="Working directory:").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4,
+        )
+        self.plot_cwd_var = tk.StringVar(value=str(self.input_path.parent))
+        ttk.Entry(top, textvariable=self.plot_cwd_var).grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=4,
+        )
+        ttk.Button(top, text="Browse...", command=self._choose_plot_directory).grid(
+            row=1, column=3, padx=(8, 0),
+        )
+        top.columnconfigure(1, weight=1)
+        top.columnconfigure(2, weight=1)
+
+        self.plot_field_frame = ttk.Labelframe(parent, text="Plot arguments", padding=(8, 5))
+        self.plot_field_frame.pack(fill="x", pady=(5, 3))
+        command_row = ttk.Frame(parent)
+        command_row.pack(fill="x", pady=3)
+        self.plot_preview_var = tk.StringVar()
+        ttk.Label(
+            command_row, textvariable=self.plot_preview_var, font=("Consolas", 9),
+            wraplength=900,
+        ).pack(side="left", fill="x", expand=True)
+        self.plot_run_button = ttk.Button(command_row, text="Generate", command=self.run_plot)
+        self.plot_run_button.pack(side="right", padx=(6, 0))
+        self.plot_stop_button = ttk.Button(
+            command_row, text="Stop", command=self.stop_plot, state="disabled",
+        )
+        self.plot_stop_button.pack(side="right")
+
+        result = ttk.Panedwindow(parent, orient="vertical")
+        result.pack(fill="both", expand=True, pady=(3, 0))
+        image_frame = ttk.Frame(result)
+        log_frame = ttk.Labelframe(result, text="Plot output", padding=4)
+        result.add(image_frame, weight=4)
+        result.add(log_frame, weight=1)
+        nav = ttk.Frame(image_frame)
+        nav.pack(fill="x")
+        self.plot_previous_button = ttk.Button(
+            nav, text="Previous", command=lambda: self._move_plot_image(-1), state="disabled",
+        )
+        self.plot_previous_button.pack(side="left")
+        self.plot_next_button = ttk.Button(
+            nav, text="Next", command=lambda: self._move_plot_image(1), state="disabled",
+        )
+        self.plot_next_button.pack(side="left", padx=5)
+        self.plot_image_status = tk.StringVar(value="No captured figure")
+        ttk.Label(nav, textvariable=self.plot_image_status).pack(side="left", padx=8)
+        self.plot_canvas_host = ttk.Frame(image_frame)
+        self.plot_canvas_host.pack(fill="both", expand=True)
+        self.plot_result_canvas = None
+        self.plot_result_toolbar = None
+        empty_figure = Figure(figsize=(9, 4), dpi=100)
+        empty_axes = empty_figure.add_subplot(111)
+        empty_axes.text(
+            .5, .5, "Generate a plot to enable pan, zoom, and export",
+            ha="center", va="center", transform=empty_axes.transAxes,
+        )
+        empty_axes.axis("off")
+        self._install_plot_figure(empty_figure)
+        self.plot_output = tk.Text(
+            log_frame, height=5, wrap="none", font=("Consolas", 9), state="disabled",
+        )
+        plot_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.plot_output.yview)
+        self.plot_output.configure(yscrollcommand=plot_scroll.set)
+        plot_scroll.pack(side="right", fill="y")
+        self.plot_output.pack(fill="both", expand=True)
+        self._refresh_plot_form()
+
+    def _refresh_plot_form(self) -> None:
+        for widget in self.plot_field_frame.winfo_children():
+            widget.destroy()
+        self.plot_fields.clear()
+        definition = self.plot_by_name[self.plot_var.get()]
+        availability = "" if definition["available"] else " — unavailable: script not found"
+        self.plot_description.configure(
+            text="{} ({}){}".format(
+                definition["label"], definition["script"], availability,
+            )
+        )
+        for index, field in enumerate(definition["fields"]):
+            row, section = divmod(index, 2)
+            base_column = section * 3
+            ttk.Label(self.plot_field_frame, text=field["label"] + ":").grid(
+                row=row, column=base_column, sticky="w", padx=(0, 5), pady=2,
+            )
+            variable = tk.StringVar(value=field.get("default", ""))
+            variable.trace_add("write", lambda *_args: self._update_plot_preview())
+            if field.get("boolean"):
+                widget = ttk.Combobox(
+                    self.plot_field_frame, textvariable=variable, state="readonly",
+                    values=("true", "false"), width=14,
+                )
+            elif field.get("choices"):
+                widget = ttk.Combobox(
+                    self.plot_field_frame, textvariable=variable, state="readonly",
+                    values=field["choices"], width=18,
+                )
+            else:
+                widget = ttk.Entry(self.plot_field_frame, textvariable=variable, width=34)
+            widget.grid(row=row, column=base_column + 1, sticky="ew", padx=(0, 12), pady=2)
+            self.plot_fields[field["name"]] = variable
+        self.plot_field_frame.columnconfigure(1, weight=1)
+        self.plot_field_frame.columnconfigure(4, weight=1)
+        self.plot_run_button.configure(
+            state="normal" if definition["available"] and self.plot_process is None else "disabled"
+        )
+        self._update_plot_preview()
+
+    def _plot_values(self) -> Dict[str, str]:
+        return {name: variable.get() for name, variable in self.plot_fields.items()}
+
+    def _plot_parameter_values(self) -> Dict[str, str]:
+        return {
+            str(item["name"]).casefold(): str(item["value"]) for item in self.parameters
+        }
+
+    def _update_plot_preview(self) -> None:
+        try:
+            preview = format_plot_command(
+                self.plot_var.get(), self._plot_values(), self._plot_parameter_values(),
+            )
+        except ValueError as exc:
+            preview = "Incomplete: {}".format(exc)
+        self.plot_preview_var.set(preview)
+
+    def _choose_plot_directory(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Select results directory", initialdir=self.plot_cwd_var.get(),
+        )
+        if selected:
+            self.plot_cwd_var.set(selected)
+
+    def _append_plot_output(self, text: str) -> None:
+        self.plot_output.configure(state="normal")
+        self.plot_output.insert("end", text)
+        self.plot_output.see("end")
+        self.plot_output.configure(state="disabled")
+
+    def run_plot(self) -> None:
+        if self.plot_process is not None:
+            return
+        cwd = Path(self.plot_cwd_var.get()).expanduser().resolve()
+        if not cwd.is_dir():
+            messagebox.showerror("Invalid directory", "Working directory not found:\n{}".format(cwd))
+            return
+        try:
+            self.plot_output_directory = Path(tempfile.mkdtemp(prefix="jorek-panel-plots-"))
+            command = jorek_plot_command(
+                self.plot_var.get(), self._plot_values(), self.plot_output_directory,
+                self._plot_parameter_values(),
+            )
+            preview = format_plot_command(
+                self.plot_var.get(), self._plot_values(), self._plot_parameter_values(),
+            )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Cannot generate plot", str(exc))
+            return
+        self._append_plot_output("\n$ cd {}\n$ {}\n".format(cwd, preview))
+        try:
+            self.plot_process = subprocess.Popen(
+                command, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                universal_newlines=True, bufsize=1, start_new_session=True,
+            )
+        except OSError as exc:
+            self.plot_process = None
+            messagebox.showerror("Cannot start plot", str(exc))
+            return
+        process = self.plot_process
+        self.plot_run_button.configure(state="disabled")
+        self.plot_stop_button.configure(state="normal")
+        self.plot_image_status.set("Generating...")
+        threading.Thread(target=self._read_plot_output, args=(process,), daemon=True).start()
+        self.after(100, self._poll_plot_output)
+
+    def _read_plot_output(self, process) -> None:
+        if process.stdout is not None:
+            for line in iter(process.stdout.readline, ""):
+                self.plot_queue.put(("output", line))
+            process.stdout.close()
+        self.plot_queue.put(("done", process.wait()))
+
+    def _poll_plot_output(self) -> None:
+        finished = None
+        while True:
+            try:
+                kind, payload = self.plot_queue.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "output":
+                self._append_plot_output(payload)
+            else:
+                finished = payload
+        if finished is None:
+            if self.plot_process is not None:
+                self.after(100, self._poll_plot_output)
+            return
+        self.plot_process = None
+        self.plot_stop_button.configure(state="disabled")
+        definition = self.plot_by_name[self.plot_var.get()]
+        self.plot_run_button.configure(state="normal" if definition["available"] else "disabled")
+        self._append_plot_output("\n[plot exited with status {}]\n".format(finished))
+        figure_objects = (
+            sorted(self.plot_output_directory.glob("*.mplfig"))
+            if self.plot_output_directory else []
+        )
+        self.plot_images = figure_objects or (
+            sorted(self.plot_output_directory.glob("*.png"))
+            if self.plot_output_directory else []
+        )
+        self.plot_image_index = 0
+        if self.plot_images:
+            self._show_plot_image()
+        else:
+            self.plot_image_status.set("No figure captured (status {})".format(finished))
+
+    def _show_plot_image(self) -> None:
+        path = self.plot_images[self.plot_image_index]
+        if path.suffix == ".mplfig":
+            with path.open("rb") as source:
+                figure = pickle.load(source)
+        else:
+            figure = Figure(figsize=(9, 4), dpi=100)
+            axes = figure.add_subplot(111)
+            axes.imshow(matplotlib_image.imread(str(path)))
+            axes.axis("off")
+            figure.tight_layout(pad=.1)
+        self._install_plot_figure(figure)
+        self.plot_image_status.set(
+            "Figure {} of {} — {}".format(
+                self.plot_image_index + 1, len(self.plot_images), path.name,
+            )
+        )
+        state = "normal" if len(self.plot_images) > 1 else "disabled"
+        self.plot_previous_button.configure(state=state)
+        self.plot_next_button.configure(state=state)
+
+    def _install_plot_figure(self, figure) -> None:
+        """Attach a real Matplotlib figure and its interactive toolbar to Tk."""
+        if self.plot_result_toolbar is not None:
+            self.plot_result_toolbar.destroy()
+        if self.plot_result_canvas is not None:
+            self.plot_result_canvas.get_tk_widget().destroy()
+        self.plot_result_figure = figure
+        self.plot_result_canvas = FigureCanvasTkAgg(figure, master=self.plot_canvas_host)
+        self.plot_result_toolbar = NavigationToolbar2Tk(
+            self.plot_result_canvas, self.plot_canvas_host, pack_toolbar=False,
+        )
+        self.plot_result_toolbar.update()
+        self.plot_result_toolbar.pack(side="bottom", fill="x")
+        self.plot_result_canvas.get_tk_widget().pack(
+            side="top", fill="both", expand=True,
+        )
+        self.plot_result_canvas.draw_idle()
+
+    def _move_plot_image(self, offset: int) -> None:
+        if not self.plot_images:
+            return
+        self.plot_image_index = (self.plot_image_index + offset) % len(self.plot_images)
+        self._show_plot_image()
+
+    def stop_plot(self) -> None:
+        process = self.plot_process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            process.terminate()
+        self.plot_image_status.set("Stopping...")
+
     def choose_input(self) -> None:
         selected = filedialog.askopenfilename(title="Select JOREK input", initialdir=self.input_path.parent)
         if selected:
@@ -691,6 +989,7 @@ class JorekPanel(tk.Tk):
         self.comparison_parameters = []
         self.path_label.configure(text=str(self.input_path))
         self.operation_cwd_var.set(str(self.input_path.parent))
+        self.plot_cwd_var.set(str(self.input_path.parent))
         if "input" in self.operation_fields:
             self.operation_fields["input"].set(self.input_path.name)
         self.parameter_tree.configure(displaycolumns=("line", "name", "value", "si_value", "section"))
@@ -714,6 +1013,7 @@ class JorekPanel(tk.Tk):
         self.comparison_parameters = second_parameters
         self.path_label.configure(text=f"A: {self.input_path}   |   B: {self.comparison_input_path}")
         self.operation_cwd_var.set(str(self.input_path.parent))
+        self.plot_cwd_var.set(str(self.input_path.parent))
         if "input" in self.operation_fields:
             self.operation_fields["input"].set(self.input_path.name)
         self.parameter_tree.configure(

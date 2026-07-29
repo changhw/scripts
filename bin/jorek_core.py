@@ -1,10 +1,12 @@
-"""Tk-free parsing, conversion, and editing helpers for JOREK inputs."""
+"""Shared parsing, editing, processing, and visualization helpers for JOREK panels."""
 
 import bisect
 import math
 import os
 import re
 import shlex
+import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -168,6 +170,246 @@ def format_operation_command(operation, values=None):
     return " ".join(
         shlex.quote(item)
         for item in [operation] + _validated_operation_args(operation, values)
+    )
+
+
+PLOT_FIELDS = {
+    "files": {"label": "Input file(s)", "default": "postproc/exprs_midplane_s*.dat",
+              "multi": True, "positional": True,
+              "help": "Space-separated paths or glob patterns."},
+    "vtk_files": {"label": "VTK file(s)", "default": "vtk*/jorek.*.vtk", "multi": True,
+                  "positional": True, "help": "Space-separated paths or glob patterns."},
+    "poincare_files": {"label": "Poincare file(s)",
+                       "default": "poincares/poinc_R-Z_s*.dat", "multi": True,
+                       "positional": True, "help": "Space-separated paths or glob patterns."},
+    "folder": {"label": "Results folder", "default": "four_results", "positional": True},
+    "directory": {"label": "Data directory", "default": "postproc", "flag": "-fp"},
+    "data_file": {"label": "Macroscopic data", "default": "macroscopic_vars.dat", "flag": "-f"},
+    "grid_filter": {"label": "Grid name filter", "default": "", "flag": "-o",
+                    "optional": True, "help": "For example: initial or xpoint."},
+    "resolution": {"label": "PNG resolution", "default": "1200x1200", "flag": "-r"},
+    "quantity": {"label": "Quantity", "default": "energies", "flag": "-q"},
+    "variables": {"label": "Variables", "default": "rho", "multi": True, "flag": "-va"},
+    "steps": {"label": "Steps", "default": "000000", "multi": True, "flag": "-st"},
+    "m_modes": {"label": "m modes", "default": "1", "multi": True, "flag": "-ml"},
+    "n_modes": {"label": "n modes", "default": "1", "multi": True, "flag": "-nl"},
+    "file_prefix": {"label": "File prefix", "default": "exprs_midplane_s", "flag": "-fn"},
+    "column": {"label": "Y column", "default": "1", "flag": "-yc"},
+    "x_column": {"label": "X column", "default": "0", "flag": "-xc"},
+    "skip_rows": {"label": "Header rows", "default": "1", "flag": "-sk"},
+    "method_vtk": {"label": "Plot method", "default": "it", "flag": "-me",
+                   "choices": ("it", "sc", "sf", "ff")},
+    "method_modes": {"label": "Mode view", "default": "al", "flag": "-me",
+                     "choices": ("am", "cm", "ph", "al")},
+    "x_scale": {"label": "X scale", "default": "linear", "flag": "-xs",
+                "choices": ("linear", "log")},
+    "y_scale": {"label": "Y scale", "default": "linear", "flag": "-ys",
+                "choices": ("linear", "log")},
+    "title": {"label": "Title", "default": "", "flag": "-ti", "optional": True},
+    "xlabel": {"label": "X label", "default": "", "flag": "-xl", "optional": True},
+    "ylabel": {"label": "Y label", "default": "", "flag": "-yl", "optional": True},
+    "xlim": {"label": "X limits", "default": "", "multi": True, "flag": "-xlim",
+             "optional": True, "help": "Two space-separated values."},
+    "ylim": {"label": "Y limits", "default": "", "multi": True, "flag": "-ylim",
+             "optional": True, "help": "Two space-separated values."},
+    "xylim": {"label": "R/Z limits", "default": "", "multi": True, "flag": "-xylim",
+              "optional": True, "help": "xmin xmax ymin ymax."},
+    "clim": {"label": "Color limits", "default": "", "multi": True, "flag": "-clim",
+             "optional": True, "help": "Minimum and maximum."},
+    "contours": {"label": "Contour values", "default": "1.0", "multi": True, "flag": "-cs"},
+    "q_surfaces": {"label": "q surfaces", "default": "", "multi": True, "flag": "-qs",
+                   "optional": True},
+    "time_multiplier": {
+        "label": "Time multiplier", "default": "1.0", "flag": "-tm",
+        "help": "Use $time2si (or t_JOREK) to derive the multiplier from the active input.",
+    },
+    "x_multiplier": {"label": "X multiplier", "default": "1.0", "flag": "-xm"},
+    "y_multiplier": {"label": "Y multiplier", "default": "1.0", "flag": "-ym"},
+    "radial_power": {"label": "Radial power", "default": "1.0", "flag": "-rp"},
+    "q_cut": {"label": "q cutoff", "default": "1.3", "flag": "-qc"},
+    "time_slice": {"label": "Time slice", "default": "", "flag": "-tslc", "optional": True},
+    "radial_slice": {"label": "Radial slice", "default": "", "flag": "-rslc",
+                     "optional": True},
+    "reference": {"label": "Reference VTK", "default": "", "flag": "-re", "optional": True},
+    "poincare_overlay": {"label": "Poincare overlay", "default": "", "flag": "-pc",
+                         "optional": True},
+    "si": {"label": "SI units", "default": "false", "flag": "-si", "boolean": "flag"},
+    "no0": {"label": "Omit n=0", "default": "false", "flag": "-no0", "boolean": "flag"},
+    "log": {"label": "Log Y", "default": "true", "flag": "-log", "false_flag": "-nolog",
+            "boolean": "either"},
+    "colorful": {"label": "Colorful", "default": "false", "flag": "-cful",
+                 "boolean": "value"},
+    "normalize": {"label": "Normalize", "default": "false", "flag": "-norm",
+                  "boolean": "value"},
+    "extra_args": {"label": "Additional arguments", "default": "", "multi": True,
+                   "positional": True, "optional": True,
+                   "help": "Advanced: additional CLI arguments passed unchanged."},
+}
+
+JOREK_PLOTS = (
+    {"name": "plot_live_data", "script": "plot_live_data.sh", "label": "Live/run history",
+     "mode": "live", "fields": ("quantity", "data_file", "si", "no0", "log", "title",
+                                "extra_args")},
+    {"name": "plot_grid", "script": "plot_grids.sh", "label": "Computational grid",
+     "mode": "grid",
+     "fields": ("grid_filter", "resolution", "extra_args")},
+    {"name": "plot_vtk", "script": "plot_vtk.py", "label": "VTK fields",
+     "mode": "python", "fields": ("vtk_files", "variables", "method_vtk", "reference",
+                                  "xylim", "clim", "q_surfaces", "time_multiplier",
+                                  "poincare_overlay", "extra_args")},
+    {"name": "plot_multiple_files", "script": "plot_multiple_files.py",
+     "label": "ASCII files", "mode": "python",
+     "fields": ("files", "x_column", "column", "skip_rows", "x_scale", "y_scale",
+                "title", "xlabel", "ylabel", "xlim", "ylim", "x_multiplier",
+                "y_multiplier", "extra_args")},
+    {"name": "plot_q_versus_time", "script": "plot_q_versus_time.py",
+     "label": "q versus time", "mode": "python",
+     "fields": ("directory", "q_cut", "contours", "xlim", "ylim", "clim",
+                "time_multiplier", "time_slice", "radial_slice", "extra_args")},
+    {"name": "plot_f_versus_time", "script": "plot_f_versus_time.py",
+     "label": "Field versus time", "mode": "python",
+     "fields": ("directory", "file_prefix", "column", "skip_rows", "radial_power",
+                "contours", "xlim", "ylim", "clim", "x_multiplier", "time_slice",
+                "radial_slice", "extra_args")},
+    {"name": "plot_mn_mode_structures", "script": "plot_mn_mode_structures.py",
+     "label": "FFT m/n mode structures", "mode": "python",
+     "fields": ("folder", "variables", "steps", "m_modes", "n_modes", "method_modes",
+                "y_multiplier", "time_multiplier", "normalize", "xlim", "ylim",
+                "extra_args")},
+    {"name": "plot_poincare_all", "script": "plot_poincare_all.py",
+     "label": "Poincare plots", "mode": "python",
+     "fields": ("poincare_files", "time_multiplier", "colorful", "title", "xylim",
+                "extra_args")},
+)
+
+_PLOT_BY_NAME = {item["name"]: item for item in JOREK_PLOTS}
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def resolve_jorek_utility(script_name):
+    """Locate a JOREK utility script without assuming the current directory."""
+    candidates = []
+    configured = os.environ.get("JOREK_UTIL")
+    if configured:
+        candidates.append(Path(configured).expanduser() / script_name)
+    candidates.extend((
+        Path(__file__).resolve().parent.parent / "util" / script_name,
+        Path.home() / "jorek" / "util" / script_name,
+    ))
+    executable = shutil.which(script_name)
+    if executable:
+        candidates.append(Path(executable))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def plot_definitions():
+    """Return plotting definitions plus current script availability."""
+    result = []
+    for plot in JOREK_PLOTS:
+        item = dict(plot)
+        script_path = resolve_jorek_utility(plot["script"])
+        item["available"] = script_path is not None
+        item["script_path"] = str(script_path) if script_path else ""
+        item["fields"] = [
+            dict({"name": name}, **PLOT_FIELDS[name]) for name in plot["fields"]
+        ]
+        result.append(item)
+    return result
+
+
+def _split_plot_value(label, value):
+    try:
+        return shlex.split(value)
+    except ValueError as exc:
+        raise ValueError("Invalid {}: {}".format(label, exc))
+
+
+def _plot_arguments(plot_name, values):
+    if plot_name not in _PLOT_BY_NAME:
+        raise ValueError("Unknown JOREK plot: {}".format(plot_name))
+    values = values or {}
+    arguments = list(_PLOT_BY_NAME[plot_name].get("forced_args", ()))
+    for field_name in _PLOT_BY_NAME[plot_name]["fields"]:
+        field = PLOT_FIELDS[field_name]
+        value = str(values.get(field_name, field.get("default", ""))).strip()
+        if not value and field.get("optional"):
+            continue
+        if not value:
+            raise ValueError("{} is required".format(field["label"]))
+        if field.get("choices") and value not in field["choices"]:
+            raise ValueError(
+                "{} must be one of {}".format(field["label"], ", ".join(field["choices"]))
+            )
+        if field.get("boolean"):
+            lowered = value.casefold()
+            if lowered not in _TRUE_VALUES | _FALSE_VALUES:
+                raise ValueError("{} must be true or false".format(field["label"]))
+            enabled = lowered in _TRUE_VALUES
+            if field["boolean"] == "flag":
+                if enabled:
+                    arguments.append(field["flag"])
+            elif field["boolean"] == "either":
+                arguments.append(field["flag"] if enabled else field["false_flag"])
+            else:
+                arguments.extend([field["flag"], "true" if enabled else "false"])
+            continue
+        parts = _split_plot_value(field["label"], value) if field.get("multi") else [value]
+        if field.get("flag"):
+            flag = "-title" if plot_name == "plot_live_data" and field_name == "title" else field["flag"]
+            arguments.append(flag)
+        arguments.extend(parts)
+    return arguments
+
+
+def resolve_plot_values(values, parameter_values=None):
+    """Resolve panel conveniences such as $time2si into utility CLI values."""
+    resolved = dict(values or {})
+    multiplier = str(resolved.get("time_multiplier", "")).strip()
+    if multiplier.casefold() in {"$time2si", "time2si", "$t_jorek", "t_jorek"}:
+        constants = normalization_constants(parameter_values or {})
+        if constants is None:
+            raise ValueError(
+                "$time2si requires central_density and central_mass in the active input"
+            )
+        resolved["time_multiplier"] = "{:.12g}".format(constants[1])
+    return resolved
+
+
+def jorek_plot_command(plot_name, values, output_directory, parameter_values=None):
+    """Build a headless plot-capture command for a JOREK utility script."""
+    if plot_name not in _PLOT_BY_NAME:
+        raise ValueError("Unknown JOREK plot: {}".format(plot_name))
+    plot = _PLOT_BY_NAME[plot_name]
+    script = resolve_jorek_utility(plot["script"])
+    if script is None:
+        raise ValueError(
+            "{} was not found. Set JOREK_UTIL or restore it in the JOREK util directory."
+            .format(plot["script"])
+        )
+    output_directory = Path(output_directory).expanduser().resolve()
+    runner = Path(__file__).resolve().parent / "jorek_plot_capture.py"
+    if not runner.is_file():
+        raise ValueError("Plot capture helper not found: {}".format(runner))
+    return [
+        sys.executable, "-u", str(runner), "--output-dir", str(output_directory),
+        "--mode", plot["mode"], "--", str(script),
+    ] + _plot_arguments(plot_name, resolve_plot_values(values, parameter_values))
+
+
+def format_plot_command(plot_name, values=None, parameter_values=None):
+    """Return the utility command shown in panel previews."""
+    plot = _PLOT_BY_NAME.get(plot_name)
+    if not plot:
+        raise ValueError("Unknown JOREK plot: {}".format(plot_name))
+    return " ".join(
+        shlex.quote(item)
+        for item in [plot["script"]] + _plot_arguments(
+            plot_name, resolve_plot_values(values, parameter_values)
+        )
     )
 
 
