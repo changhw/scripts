@@ -21,7 +21,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from jorek_core import (
     format_operation_command, format_plot_command, jorek_operation_command,
-    jorek_plot_command, operation_definitions, plot_definitions,
+    jorek_plot_command, operation_definitions, operation_environment,
+    plot_definitions,
 )
 
 from scipy.constants import (
@@ -555,7 +556,7 @@ class JorekPanel(tk.Tk):
         self.operation_fields.clear()
         operation = self.operation_by_name[self.operation_var.get()]
         self.operation_description.configure(
-            text="{} — {}".format(operation["group"], operation["label"])
+            text="{} -- {}".format(operation["group"], operation["label"])
         )
         for row, field in enumerate(operation["fields"]):
             ttk.Label(self.operation_field_frame, text=field["label"] + ":").grid(
@@ -616,9 +617,11 @@ class JorekPanel(tk.Tk):
             messagebox.showerror("Invalid directory", "Working directory not found:\n{}".format(cwd))
             return
         operation = self.operation_var.get()
+        values = self._operation_values()
         try:
-            command = jorek_operation_command(operation, self._operation_values())
-            preview = format_operation_command(operation, self._operation_values())
+            command = jorek_operation_command(operation, values)
+            environment = operation_environment(operation, values)
+            preview = format_operation_command(operation, values)
         except ValueError as exc:
             messagebox.showerror("Invalid operation", str(exc))
             return
@@ -627,6 +630,7 @@ class JorekPanel(tk.Tk):
             self.operation_process = subprocess.Popen(
                 command, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 universal_newlines=True, bufsize=1, start_new_session=True,
+                env=environment,
             )
         except OSError as exc:
             self.operation_process = None
@@ -799,7 +803,7 @@ class JorekPanel(tk.Tk):
             widget.destroy()
         self.plot_fields.clear()
         definition = self.plot_by_name[self.plot_var.get()]
-        availability = "" if definition["available"] else " — unavailable: script not found"
+        availability = "" if definition["available"] else " -- unavailable: script not found"
         self.plot_description.configure(
             text="{} ({}){}".format(
                 definition["label"], definition["script"], availability,
@@ -954,7 +958,7 @@ class JorekPanel(tk.Tk):
             figure.tight_layout(pad=.1)
         self._install_plot_figure(figure)
         self.plot_image_status.set(
-            "Figure {} of {} — {}".format(
+            "Figure {} of {} -- {}".format(
                 self.plot_image_index + 1, len(self.plot_images), path.name,
             )
         )
@@ -1001,7 +1005,7 @@ class JorekPanel(tk.Tk):
             return
         window = tk.Toplevel(self)
         window.title(
-            "MHD Control Panel — {}".format(
+            "MHD Control Panel -- {}".format(
                 self.plot_images[self.plot_image_index].stem
             )
         )
@@ -1174,7 +1178,7 @@ class JorekPanel(tk.Tk):
     def _open_embedded_command_window(self, initial_directory: Path) -> None:
         """Provide a line-oriented shell window when no terminal app exists."""
         window = tk.Toplevel(self)
-        window.title("Command window — {}".format(initial_directory))
+        window.title("Command window -- {}".format(initial_directory))
         window.geometry("900x600")
         window.minsize(500, 300)
 
@@ -1267,7 +1271,7 @@ class JorekPanel(tk.Tk):
                     return
                 current_directory["path"] = destination
                 directory_var.set(str(destination))
-                window.title("Command window — {}".format(destination))
+                window.title("Command window -- {}".format(destination))
                 return
 
             try:

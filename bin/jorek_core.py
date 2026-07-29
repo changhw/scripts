@@ -55,11 +55,11 @@ JOREK_OPERATIONS = (
     {"name": "cvt2vtk_itor_iplane", "label": "VTK: toroidal index + plane",
      "group": "HDF5 to VTK", "fields": ("i_tor", "i_plane", "input", "only")},
     {"name": "jorek_post_all", "label": "Post-process snapshots", "group": "Post-processing",
-     "fields": ("ids",)},
+     "fields": ("ids", "omp_threads")},
     {"name": "jorek_poincare_all", "label": "Generate Poincare data",
-     "group": "Post-processing", "fields": ("ids", "control_file")},
+     "group": "Post-processing", "fields": ("ids", "control_file", "omp_threads")},
     {"name": "jorek_four_all", "label": "FFT decomposition", "group": "Post-processing",
-     "fields": ("ids", "control_file")},
+     "fields": ("ids", "control_file", "omp_threads")},
 )
 
 OPERATION_FIELDS = {
@@ -74,6 +74,11 @@ OPERATION_FIELDS = {
             "help": "Space-separated IDs or ? patterns; blank processes all available snapshots."},
     "control_file": {"label": "Control/input file", "default": "input",
                      "help": "Stdin control file used by jorek2_poincare or jorek2_four."},
+    "omp_threads": {
+        "label": "OpenMP threads", "default": "", "optional": True,
+        "integer": True, "minimum": 1, "environment": "OMP_NUM_THREADS",
+        "help": "Optional positive integer exported as OMP_NUM_THREADS.",
+    },
 }
 
 _OPERATION_BY_NAME = {item["name"]: item for item in JOREK_OPERATIONS}
@@ -130,6 +135,8 @@ def _validated_operation_args(operation, values):
                     "{} must be at least {}".format(field["label"], field["minimum"])
                 )
             value = str(number)
+        if field.get("environment"):
+            continue
         if field_name == "ids":
             try:
                 id_arguments = shlex.split(value)
@@ -147,6 +154,20 @@ def _validated_operation_args(operation, values):
         control_file = arguments.pop()
         arguments.extend(["-fn", control_file])
     return arguments
+
+
+def operation_environment(operation, values=None, base_environment=None):
+    """Build the child environment, including optional operation settings."""
+    _validated_operation_args(operation, values)
+    environment = dict(os.environ if base_environment is None else base_environment)
+    values = values or {}
+    for field_name in _OPERATION_BY_NAME[operation]["fields"]:
+        field = OPERATION_FIELDS[field_name]
+        variable = field.get("environment")
+        value = str(values.get(field_name, field.get("default", ""))).strip()
+        if variable and value:
+            environment[variable] = str(int(value)) if field.get("integer") else value
+    return environment
 
 
 def jorek_operation_command(operation, values=None, bashrc_path=None):
@@ -167,9 +188,13 @@ def jorek_operation_command(operation, values=None, bashrc_path=None):
 
 def format_operation_command(operation, values=None):
     """Return the concise command users recognize from my_bashrc."""
+    assignments = operation_environment(operation, values, {})
     return " ".join(
         shlex.quote(item)
-        for item in [operation] + _validated_operation_args(operation, values)
+        for item in (
+            ["{}={}".format(name, value) for name, value in assignments.items()]
+            + [operation] + _validated_operation_args(operation, values)
+        )
     )
 
 
@@ -249,7 +274,7 @@ PLOT_FIELDS = {
                   "boolean": "value"},
     "extra_args": {"label": "Additional arguments", "default": "", "multi": True,
                    "positional": True, "optional": True,
-                   "help": "Advanced: additional CLI arguments passed unchanged."},
+                   "help": "Advanced CLI arguments; $time2si is replaced by t_JOREK."},
 }
 
 JOREK_PLOTS = (
@@ -380,17 +405,39 @@ def resolve_plot_values(values, parameter_values=None):
     """Resolve panel conveniences such as $time2si into utility CLI values."""
     resolved = dict(values or {})
     aliases = {"$time2si", "time2si", "$t_jorek", "t_jorek"}
-    for field_name, field_value in list(resolved.items()):
-        if "multiplier" not in field_name.casefold():
-            continue
-        multiplier = str(field_value).strip()
-        if multiplier.casefold() in aliases:
+    constants = None
+
+    def time_multiplier():
+        nonlocal constants
+        if constants is None:
             constants = normalization_constants(parameter_values or {})
-            if constants is None:
-                raise ValueError(
-                    "$time2si requires central_density and central_mass in the active input"
-                )
-            resolved[field_name] = "{:.12g}".format(constants[1])
+        if constants is None:
+            raise ValueError(
+                "$time2si requires central_density and central_mass in the active input"
+            )
+        return "{:.12g}".format(constants[1])
+
+    for field_name, field_value in list(resolved.items()):
+        text = str(field_value)
+        if "multiplier" in field_name.casefold() and text.strip().casefold() in aliases:
+            resolved[field_name] = time_multiplier()
+        elif field_name == "extra_args" and text:
+            parts = _split_plot_value(PLOT_FIELDS["extra_args"]["label"], text)
+            replacement = None
+            expanded = []
+            for part in parts:
+                if part.casefold() in aliases:
+                    replacement = replacement or time_multiplier()
+                    expanded.append(replacement)
+                    continue
+                if re.search(r"\$(?:time2si|t_jorek)\b", part, flags=re.IGNORECASE):
+                    replacement = replacement or time_multiplier()
+                    part = re.sub(
+                        r"\$(?:time2si|t_jorek)\b", replacement, part,
+                        flags=re.IGNORECASE,
+                    )
+                expanded.append(part)
+            resolved[field_name] = shlex.join(expanded)
     return resolved
 
 
