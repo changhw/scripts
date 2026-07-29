@@ -18,6 +18,7 @@ alias myrsync="rsync -aAXvP"
 alias myquota="/usr/lpp/mmfs/bin/mmlsquota --block-size auto"
 alias gitResetPushedCommit='git reset --soft HEAD~1'
 alias sqcdjobid='source ~/scripts/slurm_dir.sh '
+alias qscdjobid='source ~/scripts/pbs_dir.sh '
 alias plot_live_data='plot_live_data.sh'
 alias tmux_attach_t='tmux attach -t '
 alias dsgetmykeys='cd ~/.ssh/ && ds get mykeys/my_key.pub mykeys/my_key mykeys/my_key-cert.pub && cd -'

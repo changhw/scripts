@@ -95,41 +95,41 @@ def value_in_si(name, value, values=None):
     try:
         fj = parse_float(value)
     except (TypeError, ValueError):
-        return "—"
+        return "--"
     key = name.casefold()
     if key == "central_density":
-        return "{:.8e} m⁻³".format(fj * 1e20)
+        return "{:.8e} m^-3".format(fj * 1e20)
     if key == "central_mass":
         return "{:.8e} kg".format(fj * proton_mass)
     if key == "i_target":
         return "{:.8e} A".format(fj)
     if key == "particlesource" and fj == 0:
-        return "—"
+        return "--"
     contextual = ({"eta", "eta_ohmic", "visco", "visco_par", "visco_par_par",
                    "d_perp", "d_par", "particlesource"}
                   | HEAT_TRANSPORT_PARAMETERS | set(HEAT_SOURCE_SCALAR_PARAMETERS))
     if key not in contextual or not values:
-        return "—"
+        return "--"
     densities = density_constants(values)
     if not densities:
-        return "—"
+        return "--"
     rho0 = densities[1]
     if key in {"eta", "eta_ohmic"}:
-        return "{:.8e} Ω m".format(fj * math.sqrt(mu_0 / rho0))
+        return "{:.8e} Ohm m".format(fj * math.sqrt(mu_0 / rho0))
     if key in {"d_perp", "d_par"}:
-        return "{:.8e} m² s⁻¹".format(fj / math.sqrt(mu_0 * rho0))
+        return "{:.8e} m^2 s^-1".format(fj / math.sqrt(mu_0 * rho0))
     if key == "particlesource":
-        return "{:.8e} kg s⁻¹ m⁻³".format(fj * math.sqrt(rho0 / mu_0))
+        return "{:.8e} kg s^-1 m^-3".format(fj * math.sqrt(rho0 / mu_0))
     if key in HEAT_SOURCE_SCALAR_PARAMETERS:
         if HEAT_SOURCE_SCALAR_PARAMETERS[key] in values:
-            return "—"
+            return "--"
         result = fj / ((GAMMA - 1) * mu_0 * math.sqrt(mu_0 * rho0))
-        return "{:.8e} W m⁻³".format(result)
+        return "{:.8e} W m^-3".format(result)
     if key in HEAT_TRANSPORT_PARAMETERS:
         coefficient = fj * math.sqrt(rho0 / mu_0) / (GAMMA - 1)
-        return "κ={:.8e} kg m⁻¹ s⁻¹; χ={:.8e} m² s⁻¹".format(coefficient, coefficient / rho0)
+        return "kappa={:.8e} kg m^-1 s^-1; chi={:.8e} m^2 s^-1".format(coefficient, coefficient / rho0)
     dynamic = fj * math.sqrt(rho0 / mu_0)
-    return "μ={:.8e} kg m⁻¹ s⁻¹; ν={:.8e} m² s⁻¹".format(dynamic, dynamic / rho0)
+    return "mu={:.8e} kg m^-1 s^-1; nu={:.8e} m^2 s^-1".format(dynamic, dynamic / rho0)
 
 
 def canonical_value(value):
