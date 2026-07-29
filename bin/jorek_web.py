@@ -25,7 +25,8 @@ from jorek_core import (
     canonical_value, density_constants, inline_boundary, interpolate,
     format_operation_command, format_plot_command, jorek_operation_command,
     jorek_plot_command, normalization_constants, operation_definitions,
-    operation_environment, parameter_map, parse_float, parse_namelist, plot_definitions,
+    operation_environment, parameter_map, parse_float, parse_namelist,
+    path_completions, plot_definitions,
     read_numeric_file, update_parameter, value_in_si,
 )
 
@@ -66,8 +67,9 @@ async function showProfile(key,button){currentProfile=decodeURIComponent(key);do
 async function refreshPreview(){if(!currentProfile)return;let data=await (await fetch('/api/preview?profile='+encodeURIComponent(currentProfile))).json();document.getElementById('preview').textContent=data.text}
 function refreshPlot(){if(!currentProfile)return;let p=new URLSearchParams({profile:currentProfile,t:Date.now()});let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(lo&&hi){p.set('xmin',lo);p.set('xmax',hi)}document.getElementById('plot').src='/api/plot?'+p}
 document.getElementById('apply').onclick=()=>{let lo=document.getElementById('xmin').value.trim(),hi=document.getElementById('xmax').value.trim();if(!lo&&!hi){refreshPlot();return}if(!lo||!hi){alert('Fill in both x limits, or clear both boxes for automatic limits.');return}let a=Number(lo),b=Number(hi);if(!isFinite(a)||!isFinite(b)||a>=b){alert('Enter numeric x limits with the minimum smaller than the maximum.');return}refreshPlot()};document.getElementById('reset').onclick=()=>{document.getElementById('xmin').value='';document.getElementById('xmax').value='';refreshPlot()};
+async function refreshPathSuggestions(input,scope,field){let serial=String((Number(input.dataset.requestSerial)||0)+1);input.dataset.requestSerial=serial;let query=new URLSearchParams({scope:scope,field:field,value:input.value}),response=await fetch('/api/autocomplete?'+query),matches=await response.json();if(input.dataset.requestSerial!==serial)return;let list=document.getElementById(input.getAttribute('list'));if(list)list.innerHTML=matches.map(value=>`<option value="${esc(value)}"></option>`).join('')}
 function renderOperationSelector(){let s=document.getElementById('operationSelect'),selected=s.value||state.operations[0].name;s.innerHTML=state.operations.map(o=>`<option value="${esc(o.name)}">${esc(o.label)} (${esc(o.name)})</option>`).join('');s.value=state.operations.some(o=>o.name===selected)?selected:state.operations[0].name;renderOperationFields()}
-function renderOperationFields(){let op=state.operations.find(o=>o.name===document.getElementById('operationSelect').value);document.getElementById('operationNote').textContent=op.group;document.getElementById('operationFields').innerHTML=op.fields.map(f=>`<label for="op_${esc(f.name)}">${esc(f.label)}</label><input id="op_${esc(f.name)}" data-field="${esc(f.name)}" value="${esc(f.name==='input'?state.input_name:f.default||'')}"><span class="note">${esc(f.help||'')}</span>`).join('');document.querySelectorAll('#operationFields input').forEach(x=>x.oninput=updateOperationPreview);updateOperationPreview()}
+function renderOperationFields(){let op=state.operations.find(o=>o.name===document.getElementById('operationSelect').value);document.getElementById('operationNote').textContent=op.group;document.getElementById('operationFields').innerHTML=op.fields.map(f=>{let id='op_'+f.name,list=f.path_kind?` list="${esc(id)}_paths" data-path-kind="${esc(f.path_kind)}"`:'';return `<label for="${esc(id)}">${esc(f.label)}</label><input id="${esc(id)}" data-field="${esc(f.name)}"${list} value="${esc(f.name==='input'?state.input_name:f.default||'')}">${f.path_kind?`<datalist id="${esc(id)}_paths"></datalist>`:''}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#operationFields input').forEach(x=>{x.oninput=()=>{updateOperationPreview();if(x.dataset.pathKind)refreshPathSuggestions(x,'operation',x.dataset.field)};x.onfocus=()=>{if(x.dataset.pathKind)refreshPathSuggestions(x,'operation',x.dataset.field)}});updateOperationPreview()}
 function operationValues(){let v={};document.querySelectorAll('#operationFields input').forEach(x=>v[x.dataset.field]=x.value);return v}
 function updateOperationPreview(){let name=document.getElementById('operationSelect').value,values=operationValues(),assignments=[],args=[];Object.keys(values).forEach(key=>{let value=values[key].trim();if(!value)return;if(key==='omp_threads')assignments.push('OMP_NUM_THREADS='+value);else if(key==='control_file')args.push('-fn',value);else args.push(value)});document.getElementById('commandPreview').textContent='$ '+(assignments.length?assignments.join(' ')+' ':'')+name+(args.length?' '+args.join(' '):'')}
 document.getElementById('operationSelect').onchange=renderOperationFields;
@@ -76,7 +78,7 @@ document.getElementById('stopOperation').onclick=async()=>{let res=await fetch('
 document.getElementById('clearOperation').onclick=async()=>{await fetch('/api/operation/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});pollOperation()};
 async function pollOperation(){clearTimeout(operationTimer);let job=await (await fetch('/api/operation')).json(),output=document.getElementById('operationOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('operationStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping';document.getElementById('runOperation').disabled=running;document.getElementById('stopOperation').disabled=!running;if(running)operationTimer=setTimeout(pollOperation,1000)}
 function renderVizSelector(){let s=document.getElementById('vizSelect'),selected=s.value||state.plots[0].name;s.innerHTML=state.plots.map(p=>`<option value="${esc(p.name)}" ${p.available?'':'disabled'}>${esc(p.label)} (${esc(p.script)})${p.available?'':' -- unavailable'}</option>`).join('');s.value=state.plots.some(p=>p.name===selected&&p.available)?selected:state.plots.find(p=>p.available).name;renderVizFields()}
-function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let choices=f.boolean?['true','false']:(f.choices||null),control=choices?`<select id="viz_${esc(f.name)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="viz_${esc(f.name)}" data-field="${esc(f.name)}" value="${esc(f.default||'')}">`;return `<label for="viz_${esc(f.name)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>x.oninput=updateVizPreview);document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
+function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let id='viz_'+f.name,choices=f.boolean?['true','false']:(f.choices||null),list=f.path_kind?` list="${esc(id)}_paths" data-path-kind="${esc(f.path_kind)}"`:'',control=choices?`<select id="${esc(id)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="${esc(id)}" data-field="${esc(f.name)}"${list} value="${esc(f.default||'')}">${f.path_kind?`<datalist id="${esc(id)}_paths"></datalist>`:''}`;return `<label for="${esc(id)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>{x.oninput=()=>{updateVizPreview();if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)};x.onfocus=()=>{if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)}});document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
 function vizValues(){let v={};document.querySelectorAll('#vizFields [data-field]').forEach(x=>v[x.dataset.field]=x.value);return v}
 function updateVizPreview(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value),values=vizValues(),args=[];p.fields.forEach(f=>{let value=(values[f.name]||'').trim();if(!value)return;if(f.name.toLowerCase().includes('multiplier')&&['$time2si','time2si','$t_jorek','t_jorek'].includes(value.toLowerCase())&&state.time2si!==null)value=String(state.time2si);if(f.name==='extra_args'&&state.time2si!==null)value=value.replace(/\$(?:time2si|t_jorek)\b/gi,String(state.time2si));if(f.boolean){let yes=['1','true','yes','on'].includes(value.toLowerCase());if(f.boolean==='flag'){if(yes)args.push(f.flag)}else if(f.boolean==='either')args.push(yes?f.flag:f.false_flag);else args.push(f.flag,yes?'true':'false')}else{let flag=(p.name==='plot_live_data'&&f.name==='title')?'-title':(p.name==='plot_q_versus_time'&&f.name==='time_multiplier')?'-xm':f.flag;if(flag)args.push(flag);args.push(value)}});document.getElementById('vizPreview').textContent='$ '+p.script+(args.length?' '+args.join(' '):'')}
 document.getElementById('vizSelect').onchange=renderVizFields;
@@ -207,6 +209,26 @@ class BrowserApp(object):
     def operation_state(self):
         with self.operation_lock:
             return dict(self.operation_job)
+
+    def autocomplete(self, scope, field_name, value):
+        definitions = (
+            operation_definitions() if scope == "operation"
+            else plot_definitions() if scope == "plot" else []
+        )
+        field = next(
+            (
+                field for definition in definitions
+                for field in definition["fields"]
+                if field["name"] == field_name and field.get("path_kind")
+            ),
+            None,
+        )
+        if field is None:
+            raise ValueError("Unknown path field")
+        return path_completions(
+            self.paths[0].parent, value, field["path_kind"],
+            bool(field.get("multi")),
+        )
 
     def start_operation(self, operation, values):
         command = jorek_operation_command(operation, values)
@@ -498,6 +520,16 @@ def make_handler(app):
                     return self.send(
                         200, data, "application/octet-stream",
                         {"Content-Disposition": 'attachment; filename="{}"'.format(name)},
+                    )
+                if parsed.path == "/api/autocomplete":
+                    matches = app.autocomplete(
+                        query.get("scope", [""])[0],
+                        query.get("field", [""])[0],
+                        query.get("value", [""])[0],
+                    )
+                    return self.send(
+                        200, json.dumps(matches).encode("utf-8"),
+                        "application/json",
                     )
                 if parsed.path == "/api/preview":
                     key = query.get("profile", [None])[0]

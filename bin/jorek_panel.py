@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from jorek_core import (
     format_operation_command, format_plot_command, jorek_operation_command,
     jorek_plot_command, operation_definitions, operation_environment,
-    plot_definitions,
+    path_completions, plot_definitions,
 )
 
 from scipy.constants import (
@@ -567,7 +567,18 @@ class JorekPanel(tk.Tk):
                 default = self.input_path.name
             variable = tk.StringVar(value=default)
             variable.trace_add("write", lambda *_args: self._update_operation_preview())
-            entry = ttk.Entry(self.operation_field_frame, textvariable=variable, width=48)
+            if field.get("path_kind"):
+                entry = ttk.Combobox(
+                    self.operation_field_frame, textvariable=variable,
+                    state="normal", width=48,
+                )
+                self._configure_path_autocomplete(
+                    entry, variable, field, self.operation_cwd_var,
+                )
+            else:
+                entry = ttk.Entry(
+                    self.operation_field_frame, textvariable=variable, width=48,
+                )
             entry.grid(row=row, column=1, sticky="ew", pady=4)
             if field.get("help"):
                 ttk.Label(
@@ -579,6 +590,41 @@ class JorekPanel(tk.Tk):
 
     def _operation_values(self) -> Dict[str, str]:
         return {name: variable.get() for name, variable in self.operation_fields.items()}
+
+    def _configure_path_autocomplete(
+        self, widget: ttk.Combobox, variable: tk.StringVar,
+        field: Dict[str, object], directory_var: tk.StringVar,
+    ) -> None:
+        """Attach inline and dropdown filesystem completion to an entry."""
+        navigation_keys = {
+            "BackSpace", "Delete", "Left", "Right", "Up", "Down",
+            "Home", "End", "Escape", "Return", "Tab",
+        }
+
+        def refresh(event=None):
+            typed = variable.get()
+            suggestions = path_completions(
+                directory_var.get(), typed, str(field["path_kind"]),
+                bool(field.get("multi")),
+            )
+            widget.configure(values=suggestions)
+            if (
+                event is None or event.keysym in navigation_keys
+                or not getattr(event, "char", "") or not suggestions
+                or widget.index("insert") != len(typed)
+            ):
+                return
+            completion = suggestions[0]
+            if (
+                len(completion) > len(typed)
+                and completion[:len(typed)].casefold() == typed.casefold()
+            ):
+                variable.set(completion)
+                widget.icursor(len(completion))
+                widget.selection_range(len(typed), len(completion))
+
+        widget.configure(postcommand=refresh)
+        widget.bind("<KeyRelease>", refresh)
 
     def _update_operation_preview(self) -> None:
         try:
@@ -826,6 +872,14 @@ class JorekPanel(tk.Tk):
                 widget = ttk.Combobox(
                     self.plot_field_frame, textvariable=variable, state="readonly",
                     values=field["choices"], width=18,
+                )
+            elif field.get("path_kind"):
+                widget = ttk.Combobox(
+                    self.plot_field_frame, textvariable=variable,
+                    state="normal", width=34,
+                )
+                self._configure_path_autocomplete(
+                    widget, variable, field, self.plot_cwd_var,
                 )
             else:
                 widget = ttk.Entry(self.plot_field_frame, textvariable=variable, width=34)

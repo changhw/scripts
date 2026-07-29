@@ -63,7 +63,7 @@ JOREK_OPERATIONS = (
 )
 
 OPERATION_FIELDS = {
-    "input": {"label": "JOREK input", "default": "input",
+    "input": {"label": "JOREK input", "default": "input", "path_kind": "file",
               "help": "Input namelist passed to jorek2vtk."},
     "i_plane": {"label": "Plane index", "default": "1", "integer": True, "minimum": 0},
     "i_tor": {"label": "Toroidal index", "default": "0", "integer": True, "minimum": 0},
@@ -73,6 +73,7 @@ OPERATION_FIELDS = {
     "ids": {"label": "Snapshot IDs", "default": "", "optional": True,
             "help": "Space-separated IDs or ? patterns; blank processes all available snapshots."},
     "control_file": {"label": "Control/input file", "default": "input",
+                     "path_kind": "file",
                      "help": "Stdin control file used by jorek2_poincare or jorek2_four."},
     "omp_threads": {
         "label": "OpenMP threads", "default": "", "optional": True,
@@ -106,9 +107,14 @@ def operation_definitions():
     definitions = []
     for operation in JOREK_OPERATIONS:
         item = dict(operation)
-        item["fields"] = [
-            dict({"name": name}, **OPERATION_FIELDS[name]) for name in operation["fields"]
-        ]
+        item["fields"] = []
+        for name in operation["fields"]:
+            field = dict({"name": name}, **OPERATION_FIELDS[name])
+            if field.get("path_kind"):
+                field["help"] = "{} Type to autocomplete from the working directory.".format(
+                    field.get("help", "")
+                ).strip()
+            item["fields"].append(field)
         definitions.append(item)
     return definitions
 
@@ -200,16 +206,21 @@ def format_operation_command(operation, values=None):
 
 PLOT_FIELDS = {
     "files": {"label": "Input file(s)", "default": "postproc/exprs_midplane_s*.dat",
-              "multi": True, "positional": True,
+              "multi": True, "positional": True, "path_kind": "file",
               "help": "Space-separated paths or glob patterns."},
     "vtk_files": {"label": "VTK file(s)", "default": "vtk*/jorek.*.vtk", "multi": True,
-                  "positional": True, "help": "Space-separated paths or glob patterns."},
+                  "positional": True, "path_kind": "file",
+                  "help": "Space-separated paths or glob patterns."},
     "poincare_files": {"label": "Poincare file(s)",
                        "default": "poincares/poinc_R-Z_s*.dat", "multi": True,
-                       "positional": True, "help": "Space-separated paths or glob patterns."},
-    "folder": {"label": "Results folder", "default": "four_results", "positional": True},
-    "directory": {"label": "Data directory", "default": "postproc", "flag": "-fp"},
-    "data_file": {"label": "Macroscopic data", "default": "macroscopic_vars.dat", "flag": "-f"},
+                       "positional": True, "path_kind": "file",
+                       "help": "Space-separated paths or glob patterns."},
+    "folder": {"label": "Results folder", "default": "four_results",
+               "positional": True, "path_kind": "directory"},
+    "directory": {"label": "Data directory", "default": "postproc", "flag": "-fp",
+                  "path_kind": "directory"},
+    "data_file": {"label": "Macroscopic data", "default": "macroscopic_vars.dat",
+                  "flag": "-f", "path_kind": "file"},
     "grid_filter": {"label": "Grid name filter", "default": "", "flag": "-o",
                     "optional": True, "help": "For example: initial or xpoint."},
     "resolution": {"label": "PNG resolution", "default": "1200x1200", "flag": "-r"},
@@ -261,9 +272,10 @@ PLOT_FIELDS = {
     "time_slice": {"label": "Time slice", "default": "", "flag": "-tslc", "optional": True},
     "radial_slice": {"label": "Radial slice", "default": "", "flag": "-rslc",
                      "optional": True},
-    "reference": {"label": "Reference VTK", "default": "", "flag": "-re", "optional": True},
+    "reference": {"label": "Reference VTK", "default": "", "flag": "-re",
+                  "optional": True, "path_kind": "file"},
     "poincare_overlay": {"label": "Poincare overlay", "default": "", "flag": "-pc",
-                         "optional": True},
+                         "optional": True, "path_kind": "file"},
     "si": {"label": "SI units", "default": "false", "flag": "-si", "boolean": "flag"},
     "no0": {"label": "Omit n=0", "default": "false", "flag": "-no0", "boolean": "flag"},
     "log": {"label": "Log Y", "default": "true", "flag": "-log", "false_flag": "-nolog",
@@ -345,9 +357,14 @@ def plot_definitions():
         script_path = resolve_jorek_utility(plot["script"])
         item["available"] = script_path is not None
         item["script_path"] = str(script_path) if script_path else ""
-        item["fields"] = [
-            dict({"name": name}, **PLOT_FIELDS[name]) for name in plot["fields"]
-        ]
+        item["fields"] = []
+        for name in plot["fields"]:
+            field = dict({"name": name}, **PLOT_FIELDS[name])
+            if field.get("path_kind"):
+                field["help"] = "{} Type to autocomplete from the working directory.".format(
+                    field.get("help", "")
+                ).strip()
+            item["fields"].append(field)
         result.append(item)
     return result
 
@@ -357,6 +374,75 @@ def _split_plot_value(label, value):
         return shlex.split(value)
     except ValueError as exc:
         raise ValueError("Invalid {}: {}".format(label, exc))
+
+
+def path_completions(directory, value, kind="file", multi=False, limit=50):
+    """Return safe relative path completions rooted at a working directory."""
+    if kind not in {"file", "directory"}:
+        return []
+    try:
+        root = Path(directory).expanduser().resolve(strict=True)
+    except OSError:
+        return []
+    if not root.is_dir():
+        return []
+
+    text = str(value or "")
+    token_start = 0
+    if multi:
+        escaped = False
+        quote = None
+        for index, character in enumerate(text):
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif quote:
+                if character == quote:
+                    quote = None
+            elif character in {"'", '"'}:
+                quote = character
+            elif character.isspace():
+                token_start = index + 1
+    token = text[token_start:]
+    quote_prefix = token[0] if token[:1] in {"'", '"'} else ""
+    if quote_prefix:
+        token = token[1:]
+    unescaped = token.replace(r"\ ", " ")
+    parent_text, prefix = os.path.split(unescaped)
+    search_directory = root / parent_text if parent_text else root
+    try:
+        search_directory = search_directory.resolve(strict=True)
+        search_directory.relative_to(root)
+    except (OSError, ValueError):
+        return []
+    if not search_directory.is_dir():
+        return []
+
+    suggestions = []
+    try:
+        children = sorted(
+            search_directory.iterdir(),
+            key=lambda item: (not item.is_dir(), item.name.casefold()),
+        )
+    except OSError:
+        return []
+    for child in children:
+        if not child.name.casefold().startswith(prefix.casefold()):
+            continue
+        if child.name.startswith(".") and not prefix.startswith("."):
+            continue
+        if kind == "directory" and not child.is_dir():
+            continue
+        relative = child.relative_to(root).as_posix()
+        if child.is_dir():
+            relative += "/"
+        if multi:
+            relative = relative.replace(" ", r"\ ")
+        suggestions.append(text[:token_start] + quote_prefix + relative)
+        if len(suggestions) >= limit:
+            break
+    return suggestions
 
 
 def _plot_arguments(plot_name, values):
