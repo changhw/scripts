@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -55,7 +56,7 @@ HTML = r"""<!doctype html>
 <section id="operations" class="panel hidden"><div class="operation-grid"><label for="operationSelect">Operation</label><select id="operationSelect"></select><span id="operationNote" class="note"></span><span>Working directory</span><code id="operationCwd"></code><span class="note">The directory containing input A.</span></div><div id="operationFields" class="operation-grid" style="margin-top:12px"></div><div id="commandPreview" class="command"></div><div class="controls"><button id="runOperation" class="run">Run</button><button id="stopOperation" class="stop">Stop</button><button id="clearOperation">Clear output</button><span id="operationStatus" class="note">Idle</span></div><pre id="operationOutput" class="preview operation-output"></pre></section>
 <section id="visualization" class="panel hidden"><div class="viz-layout"><div><div class="operation-grid"><label for="vizSelect">Plot utility</label><select id="vizSelect"></select><span id="vizNote" class="note"></span><span>Working directory</span><code id="vizCwd"></code><span class="note">The directory containing input A.</span></div><div id="vizFields" class="operation-grid" style="margin-top:12px"></div><div id="vizPreview" class="command"></div><div class="controls"><button id="runViz" class="run">Generate</button><button id="stopViz" class="stop">Stop</button><span id="vizStatus" class="note">Idle</span></div><pre id="vizOutput" class="preview viz-log"></pre></div><div><div class="controls"><button id="previousViz">Previous</button><button id="nextViz">Next</button><button id="standaloneViz">Open standalone</button><button id="downloadViz">Export .mplfig</button><span id="vizImageStatus" class="note">No captured figure</span></div><img id="vizImage" class="viz-image"></div></div></section>
 <script>
-let state, currentProfile, operationTimer, vizTimer, vizIndex=0, vizCount=0, vizFigureCount=0;
+let state, currentProfile, operationTimer, vizTimer, vizIndex=0, vizCount=0, vizFigureCount=0, vizFigureAvailable=[];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.panel').forEach(x=>x.classList.add('hidden'));document.getElementById(b.dataset.tab).classList.remove('hidden')});
 async function load(){state=await (await fetch('/api/state')).json();document.getElementById('paths').textContent=state.paths.join('  |  ');document.getElementById('operationCwd').textContent=state.operation_directory;document.getElementById('vizCwd').textContent=state.operation_directory;if(currentProfile&&!state.profiles.some(p=>p.key===currentProfile)){currentProfile=null;document.getElementById('plot').removeAttribute('src');document.getElementById('preview').textContent='Select a profile.'}renderTable();renderProfiles();renderOperationSelector();renderVizSelector();if(currentProfile){refreshPlot();refreshPreview()}pollOperation();pollViz()}
@@ -77,19 +78,19 @@ document.getElementById('runOperation').onclick=async()=>{let res=await fetch('/
 document.getElementById('stopOperation').onclick=async()=>{let res=await fetch('/api/operation/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollOperation()};
 document.getElementById('clearOperation').onclick=async()=>{await fetch('/api/operation/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});pollOperation()};
 async function pollOperation(){clearTimeout(operationTimer);let job=await (await fetch('/api/operation')).json(),output=document.getElementById('operationOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('operationStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping';document.getElementById('runOperation').disabled=running;document.getElementById('stopOperation').disabled=!running;if(running)operationTimer=setTimeout(pollOperation,1000)}
-function renderVizSelector(){let s=document.getElementById('vizSelect'),selected=s.value||state.plots[0].name;s.innerHTML=state.plots.map(p=>`<option value="${esc(p.name)}" ${p.available?'':'disabled'}>${esc(p.label)} (${esc(p.script)})${p.available?'':' -- unavailable'}</option>`).join('');s.value=state.plots.some(p=>p.name===selected&&p.available)?selected:state.plots.find(p=>p.available).name;renderVizFields()}
-function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let id='viz_'+f.name,choices=f.boolean?['true','false']:(f.choices||null),list=f.path_kind?` list="${esc(id)}_paths" data-path-kind="${esc(f.path_kind)}"`:'',control=choices?`<select id="${esc(id)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="${esc(id)}" data-field="${esc(f.name)}"${list} value="${esc(f.default||'')}">${f.path_kind?`<datalist id="${esc(id)}_paths"></datalist>`:''}`;return `<label for="${esc(id)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>{x.oninput=()=>{updateVizPreview();if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)};x.onfocus=()=>{if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)}});document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
+function renderVizSelector(){let s=document.getElementById('vizSelect'),selected=s.value||(state.plots[0]||{}).name,available=state.plots.find(p=>p.available);s.innerHTML=state.plots.map(p=>`<option value="${esc(p.name)}" ${p.available?'':'disabled'}>${esc(p.label)} (${esc(p.script)})${p.available?'':' -- unavailable'}</option>`).join('');if(!available){s.value='';document.getElementById('vizNote').textContent='No plotting utilities were found';document.getElementById('vizFields').innerHTML='';document.getElementById('vizPreview').textContent='';document.getElementById('runViz').disabled=true;return}s.value=state.plots.some(p=>p.name===selected&&p.available)?selected:available.name;renderVizFields()}
+function renderVizFields(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value);if(!p){document.getElementById('runViz').disabled=true;return}document.getElementById('vizNote').textContent=p.available?p.script_path:'Script not found';document.getElementById('vizFields').innerHTML=p.fields.map(f=>{let id='viz_'+f.name,choices=f.boolean?['true','false']:(f.choices||null),list=f.path_kind?` list="${esc(id)}_paths" data-path-kind="${esc(f.path_kind)}"`:'',control=choices?`<select id="${esc(id)}" data-field="${esc(f.name)}">${choices.map(x=>`<option ${x===f.default?'selected':''}>${esc(x)}</option>`).join('')}</select>`:`<input id="${esc(id)}" data-field="${esc(f.name)}"${list} value="${esc(f.default||'')}">${f.path_kind?`<datalist id="${esc(id)}_paths"></datalist>`:''}`;return `<label for="${esc(id)}">${esc(f.label)}</label>${control}<span class="note">${esc(f.help||'')}</span>`}).join('');document.querySelectorAll('#vizFields input,#vizFields select').forEach(x=>{x.oninput=()=>{updateVizPreview();if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)};x.onfocus=()=>{if(x.dataset.pathKind)refreshPathSuggestions(x,'plot',x.dataset.field)}});document.getElementById('runViz').disabled=!p.available;updateVizPreview()}
 function vizValues(){let v={};document.querySelectorAll('#vizFields [data-field]').forEach(x=>v[x.dataset.field]=x.value);return v}
 function updateVizPreview(){let p=state.plots.find(x=>x.name===document.getElementById('vizSelect').value),values=vizValues(),args=[];p.fields.forEach(f=>{let value=(values[f.name]||'').trim();if(!value)return;if(f.name.toLowerCase().includes('multiplier')&&['$time2si','time2si','$t_jorek','t_jorek'].includes(value.toLowerCase())&&state.time2si!==null)value=String(state.time2si);if(f.name==='extra_args'&&state.time2si!==null)value=value.replace(/\$(?:time2si|t_jorek)\b/gi,String(state.time2si));if(f.boolean){let yes=['1','true','yes','on'].includes(value.toLowerCase());if(f.boolean==='flag'){if(yes)args.push(f.flag)}else if(f.boolean==='either')args.push(yes?f.flag:f.false_flag);else args.push(f.flag,yes?'true':'false')}else{let flag=(p.name==='plot_live_data'&&f.name==='title')?'-title':(p.name==='plot_q_versus_time'&&f.name==='time_multiplier')?'-xm':f.flag;if(flag)args.push(flag);args.push(value)}});document.getElementById('vizPreview').textContent='$ '+p.script+(args.length?' '+args.join(' '):'')}
 document.getElementById('vizSelect').onchange=renderVizFields;
 document.getElementById('runViz').onclick=async()=>{let res=await fetch('/api/visualization/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plot:document.getElementById('vizSelect').value,values:vizValues()})}),out=await res.json();if(!res.ok){alert(out.error);return}vizIndex=0;pollViz()};
 document.getElementById('stopViz').onclick=async()=>{let res=await fetch('/api/visualization/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),out=await res.json();if(!res.ok)alert(out.error);pollViz()};
-function showViz(){let image=document.getElementById('vizImage');if(!vizCount){image.removeAttribute('src');document.getElementById('vizImageStatus').textContent='No captured figure';document.getElementById('downloadViz').disabled=true;document.getElementById('standaloneViz').disabled=true;return}image.src='/api/visualization/image?index='+vizIndex+'&t='+Date.now();document.getElementById('vizImageStatus').textContent='Figure '+(vizIndex+1)+' of '+vizCount;document.getElementById('previousViz').disabled=document.getElementById('nextViz').disabled=vizCount<2;document.getElementById('downloadViz').disabled=vizIndex>=vizFigureCount;document.getElementById('standaloneViz').disabled=false}
+function showViz(){let image=document.getElementById('vizImage');if(!vizCount){image.removeAttribute('src');document.getElementById('vizImageStatus').textContent='No captured figure';document.getElementById('downloadViz').disabled=true;document.getElementById('standaloneViz').disabled=true;return}image.src='/api/visualization/image?index='+vizIndex+'&t='+Date.now();document.getElementById('vizImageStatus').textContent='Figure '+(vizIndex+1)+' of '+vizCount;document.getElementById('previousViz').disabled=document.getElementById('nextViz').disabled=vizCount<2;document.getElementById('downloadViz').disabled=!vizFigureAvailable[vizIndex];document.getElementById('standaloneViz').disabled=false}
 document.getElementById('previousViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex-1+vizCount)%vizCount;showViz()}};
 document.getElementById('nextViz').onclick=()=>{if(vizCount){vizIndex=(vizIndex+1)%vizCount;showViz()}};
-document.getElementById('downloadViz').onclick=()=>{if(vizIndex<vizFigureCount)window.location='/api/visualization/figure?index='+vizIndex};
+document.getElementById('downloadViz').onclick=()=>{if(vizFigureAvailable[vizIndex])window.location='/api/visualization/figure?index='+vizIndex};
 document.getElementById('standaloneViz').onclick=()=>{if(vizCount)window.open('/api/visualization/image?index='+vizIndex+'&t='+Date.now(),'mhd-figure-'+vizIndex,'width=1100,height=800,resizable=yes,scrollbars=yes')};
-async function pollViz(){clearTimeout(vizTimer);let job=await (await fetch('/api/visualization')).json(),output=document.getElementById('vizOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('vizStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping',available=state.plots.find(p=>p.name===document.getElementById('vizSelect').value).available;document.getElementById('runViz').disabled=running||!available;document.getElementById('stopViz').disabled=!running;vizFigureCount=job.figure_count||0;if(job.image_count!==vizCount){vizCount=job.image_count;vizIndex=0;showViz()}else showViz();if(running)vizTimer=setTimeout(pollViz,1000)}
+async function pollViz(){clearTimeout(vizTimer);let job=await (await fetch('/api/visualization')).json(),output=document.getElementById('vizOutput');output.textContent=job.log||'';output.scrollTop=output.scrollHeight;document.getElementById('vizStatus').textContent=job.status+(job.exit_code===null?'':' (status '+job.exit_code+')');let running=job.status==='running'||job.status==='stopping',selected=state.plots.find(p=>p.name===document.getElementById('vizSelect').value),available=!!(selected&&selected.available);document.getElementById('runViz').disabled=running||!available;document.getElementById('stopViz').disabled=!running;vizFigureCount=job.figure_count||0;vizFigureAvailable=job.figure_available||[];if(job.image_count!==vizCount){vizCount=job.image_count;vizIndex=0;showViz()}else showViz();if(running)vizTimer=setTimeout(pollViz,1000)}
 load();
 </script></body></html>"""
 
@@ -103,28 +104,39 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 class BrowserApp(object):
     def __init__(self, first, second=None):
         self.paths = [first.resolve()] + ([second.resolve()] if second else [])
+        self.data_lock = threading.RLock()
+        self.shutting_down = False
         self.operation_lock = threading.Lock()
         self.operation_process = None
+        self.operation_thread = None
         self.operation_job = {
             "status": "idle", "operation": None, "exit_code": None, "log": "",
         }
         self.visualization_lock = threading.Lock()
         self.visualization_process = None
+        self.visualization_thread = None
         self.visualization_directory = None
+        self.visualization_previous_directory = None
         self.visualization_images = []
         self.visualization_figures = []
         self.visualization_job = {
             "status": "idle", "plot": None, "exit_code": None, "log": "",
-            "image_count": 0, "figure_count": 0,
+            "image_count": 0, "figure_count": 0, "figure_available": [],
         }
         self.reload()
 
     def reload(self):
-        self.parameters = [parse_namelist(path) for path in self.paths]
-        self.values = [parameter_map(items) for items in self.parameters]
-        self.profiles = self._profiles()
+        with self.data_lock:
+            parameters = [parse_namelist(path) for path in self.paths]
+            self.parameters = parameters
+            self.values = [parameter_map(items) for items in parameters]
+            self.profiles = self._profiles()
 
     def state(self):
+        with self.data_lock:
+            return self._state()
+
+    def _state(self):
         maps = [{str(x["name"]).casefold(): x for x in items} for items in self.parameters]
         names = list(maps[0])
         if len(maps) == 2:
@@ -197,14 +209,26 @@ class BrowserApp(object):
         return read_numeric_file(source["path"])
 
     def edit(self, key, side, value):
+        if side not in {"a", "b"}:
+            raise ValueError("Input side must be 'a' or 'b'")
         index = 0 if side == "a" else 1
-        if index >= len(self.parameters):
-            raise ValueError("Input side is unavailable")
-        item = next((x for x in self.parameters[index] if str(x["name"]).casefold() == key), None)
-        if not item:
-            raise ValueError("Parameter is not present in that input")
-        update_parameter(self.paths[index], int(item["line"]), str(item["name"]), value.strip())
-        self.reload()
+        with self.data_lock:
+            if index >= len(self.parameters):
+                raise ValueError("Input side is unavailable")
+            item = next(
+                (
+                    item for item in self.parameters[index]
+                    if str(item["name"]).casefold() == key
+                ),
+                None,
+            )
+            if not item:
+                raise ValueError("Parameter is not present in that input")
+            update_parameter(
+                self.paths[index], int(item["line"]),
+                str(item["name"]), value.strip(),
+            )
+            self.reload()
 
     def operation_state(self):
         with self.operation_lock:
@@ -235,6 +259,8 @@ class BrowserApp(object):
         environment = operation_environment(operation, values)
         preview = format_operation_command(operation, values)
         with self.operation_lock:
+            if self.shutting_down:
+                raise ValueError("The control panel is shutting down")
             if self.operation_process is not None:
                 raise ValueError("Another operation is already running")
             try:
@@ -250,9 +276,10 @@ class BrowserApp(object):
                 "status": "running", "operation": operation, "exit_code": None,
                 "log": "$ cd {}\n$ {}\n".format(self.paths[0].parent, preview),
             }
-        threading.Thread(
-            target=self._capture_operation, args=(process,), daemon=True,
-        ).start()
+            self.operation_thread = threading.Thread(
+                target=self._capture_operation, args=(process,), daemon=True,
+            )
+            self.operation_thread.start()
 
     def _capture_operation(self, process):
         if process.stdout is not None:
@@ -291,35 +318,45 @@ class BrowserApp(object):
             return dict(self.visualization_job)
 
     def start_visualization(self, plot_name, values):
-        output_directory = Path(tempfile.mkdtemp(prefix="jorek-web-plots-"))
-        command = jorek_plot_command(
-            plot_name, values, output_directory, self.values[0],
-        )
-        preview = format_plot_command(plot_name, values, self.values[0])
         with self.visualization_lock:
+            if self.shutting_down:
+                raise ValueError("The control panel is shutting down")
             if self.visualization_process is not None:
                 raise ValueError("Another visualization is already running")
+            output_directory = Path(tempfile.mkdtemp(prefix="jorek-web-plots-"))
             try:
+                with self.data_lock:
+                    parameter_values = dict(self.values[0])
+                command = jorek_plot_command(
+                    plot_name, values, output_directory, parameter_values,
+                    working_directory=self.paths[0].parent,
+                )
+                preview = format_plot_command(
+                    plot_name, values, parameter_values,
+                )
                 process = subprocess.Popen(
                     command, cwd=str(self.paths[0].parent), stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1,
                     start_new_session=True,
                 )
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
+                shutil.rmtree(str(output_directory), ignore_errors=True)
                 raise ValueError("Cannot start visualization: {}".format(exc))
             self.visualization_process = process
+            self.visualization_previous_directory = self.visualization_directory
             self.visualization_directory = output_directory
             self.visualization_images = []
             self.visualization_figures = []
             self.visualization_job = {
                 "status": "running", "plot": plot_name, "exit_code": None,
                 "log": "$ cd {}\n$ {}\n".format(self.paths[0].parent, preview),
-                "image_count": 0, "figure_count": 0,
+                "image_count": 0, "figure_count": 0, "figure_available": [],
             }
-        threading.Thread(
-            target=self._capture_visualization, args=(process, output_directory),
-            daemon=True,
-        ).start()
+            self.visualization_thread = threading.Thread(
+                target=self._capture_visualization, args=(process, output_directory),
+                daemon=True,
+            )
+            self.visualization_thread.start()
 
     def _capture_visualization(self, process, output_directory):
         if process.stdout is not None:
@@ -331,12 +368,20 @@ class BrowserApp(object):
             process.stdout.close()
         return_code = process.wait()
         images = sorted(output_directory.glob("*.png"))
-        figures = sorted(output_directory.glob("*.mplfig"))
+        figures = {
+            path.stem: path for path in sorted(output_directory.glob("*.mplfig"))
+        }
+        aligned_figures = [figures.get(path.stem) for path in images]
         with self.visualization_lock:
             self.visualization_images = images
-            self.visualization_figures = figures
+            self.visualization_figures = aligned_figures
             self.visualization_job["image_count"] = len(images)
-            self.visualization_job["figure_count"] = len(figures)
+            self.visualization_job["figure_count"] = sum(
+                path is not None for path in aligned_figures
+            )
+            self.visualization_job["figure_available"] = [
+                path is not None for path in aligned_figures
+            ]
             self.visualization_job["exit_code"] = return_code
             self.visualization_job["status"] = (
                 "completed" if return_code == 0 and images else "failed"
@@ -346,6 +391,10 @@ class BrowserApp(object):
                 .format(return_code, len(images))
             )
             self.visualization_process = None
+            previous_directory = self.visualization_previous_directory
+            self.visualization_previous_directory = None
+            if previous_directory is not None:
+                shutil.rmtree(str(previous_directory), ignore_errors=True)
 
     def stop_visualization(self):
         with self.visualization_lock:
@@ -363,14 +412,61 @@ class BrowserApp(object):
             if not 0 <= index < len(self.visualization_images):
                 raise ValueError("Unknown visualization image")
             path = self.visualization_images[index]
-        return path.read_bytes()
+            return path.read_bytes()
 
     def visualization_figure(self, index):
         with self.visualization_lock:
             if not 0 <= index < len(self.visualization_figures):
                 raise ValueError("Interactive figure is unavailable")
             path = self.visualization_figures[index]
-        return path.name, path.read_bytes()
+            if path is None:
+                raise ValueError("Interactive figure is unavailable")
+            return path.name, path.read_bytes()
+
+    @staticmethod
+    def _terminate_process(process):
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+
+    def shutdown(self):
+        """Terminate server-owned jobs and remove visualization artifacts."""
+        with self.operation_lock:
+            self.shutting_down = True
+            operation_process = self.operation_process
+        with self.visualization_lock:
+            visualization_process = self.visualization_process
+        self._terminate_process(operation_process)
+        self._terminate_process(visualization_process)
+        for thread in (self.operation_thread, self.visualization_thread):
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=5)
+        for process in (operation_process, visualization_process):
+            if process is not None and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+        for thread in (self.operation_thread, self.visualization_thread):
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=2)
+        with self.visualization_lock:
+            for directory in (
+                self.visualization_previous_directory, self.visualization_directory,
+            ):
+                if directory is not None:
+                    shutil.rmtree(str(directory), ignore_errors=True)
+            self.visualization_previous_directory = None
+            self.visualization_directory = None
 
     def converted(self, key, rows, side):
         valid = [row for row in rows if len(row) >= 2]
@@ -415,6 +511,10 @@ class BrowserApp(object):
         return None, "No SI conversion configured", None, None
 
     def plot(self, key, xmin=None, xmax=None):
+        with self.data_lock:
+            return self._plot(key, xmin, xmax)
+
+    def _plot(self, key, xmin=None, xmax=None):
         entry = self.profiles[key]
         fig = Figure(figsize=(11, 4.5), dpi=120)
         original, converted = fig.subplots(1, 2)
@@ -602,7 +702,9 @@ def main():
     if args.open_browser: threading.Timer(.5,lambda:webbrowser.open(url)).start()
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: server.server_close()
+    finally:
+        app.shutdown()
+        server.server_close()
 
 
 if __name__ == "__main__": main()

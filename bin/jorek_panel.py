@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -245,6 +246,7 @@ def replace_assignment_value(line: str, name: str, new_value: str) -> str:
 
 def update_namelist_parameter(path: Path, line_number: int, name: str, new_value: str) -> None:
     """Atomically update an existing namelist assignment."""
+    original_mode = stat.S_IMODE(path.stat().st_mode)
     with path.open("r", encoding="utf-8", errors="replace", newline="") as source:
         lines = source.readlines()
     if not 1 <= line_number <= len(lines):
@@ -258,6 +260,7 @@ def update_namelist_parameter(path: Path, line_number: int, name: str, new_value
         ) as temporary:
             temporary.writelines(lines)
             temporary_name = temporary.name
+        os.chmod(temporary_name, original_mode)
         os.replace(temporary_name, path)
     finally:
         if temporary_name and os.path.exists(temporary_name):
@@ -353,6 +356,7 @@ class JorekPanel(tk.Tk):
         self.plot_images = []
         self.plot_image_index = 0
         self.plot_output_directory = None
+        self.plot_previous_output_directory = None
         self.command_processes = set()
         self.autocomplete_popup = None
         self.autocomplete_listbox = None
@@ -1044,16 +1048,18 @@ class JorekPanel(tk.Tk):
         if not cwd.is_dir():
             messagebox.showerror("Invalid directory", "Working directory not found:\n{}".format(cwd))
             return
+        output_directory = None
         try:
-            self.plot_output_directory = Path(tempfile.mkdtemp(prefix="jorek-panel-plots-"))
+            output_directory = Path(tempfile.mkdtemp(prefix="jorek-panel-plots-"))
             command = jorek_plot_command(
-                self.plot_var.get(), self._plot_values(), self.plot_output_directory,
-                self._plot_parameter_values(),
+                self.plot_var.get(), self._plot_values(), output_directory,
+                self._plot_parameter_values(), working_directory=cwd,
             )
             preview = format_plot_command(
                 self.plot_var.get(), self._plot_values(), self._plot_parameter_values(),
             )
         except (OSError, ValueError) as exc:
+            self._cleanup_plot_directory(output_directory)
             messagebox.showerror("Cannot generate plot", str(exc))
             return
         self._append_plot_output("\n$ cd {}\n$ {}\n".format(cwd, preview))
@@ -1064,8 +1070,11 @@ class JorekPanel(tk.Tk):
             )
         except OSError as exc:
             self.plot_process = None
+            self._cleanup_plot_directory(output_directory)
             messagebox.showerror("Cannot start plot", str(exc))
             return
+        self.plot_previous_output_directory = self.plot_output_directory
+        self.plot_output_directory = output_directory
         process = self.plot_process
         self.plot_run_button.configure(state="disabled")
         self.plot_stop_button.configure(state="normal")
@@ -1100,25 +1109,43 @@ class JorekPanel(tk.Tk):
         definition = self.plot_by_name[self.plot_var.get()]
         self.plot_run_button.configure(state="normal" if definition["available"] else "disabled")
         self._append_plot_output("\n[plot exited with status {}]\n".format(finished))
+        png_images = (
+            sorted(self.plot_output_directory.glob("*.png"))
+            if self.plot_output_directory else []
+        )
         figure_objects = (
             sorted(self.plot_output_directory.glob("*.mplfig"))
             if self.plot_output_directory else []
         )
-        self.plot_images = figure_objects or (
-            sorted(self.plot_output_directory.glob("*.png"))
-            if self.plot_output_directory else []
-        )
+        figures_by_stem = {path.stem: path for path in figure_objects}
+        self.plot_images = [
+            figures_by_stem.pop(path.stem, path) for path in png_images
+        ] + sorted(figures_by_stem.values())
         self.plot_image_index = 0
         if self.plot_images:
             self._show_plot_image()
         else:
             self.plot_image_status.set("No figure captured (status {})".format(finished))
+        self._cleanup_plot_directory(self.plot_previous_output_directory)
+        self.plot_previous_output_directory = None
 
     def _show_plot_image(self) -> None:
         path = self.plot_images[self.plot_image_index]
         if path.suffix == ".mplfig":
-            with path.open("rb") as source:
-                figure = pickle.load(source)
+            try:
+                with path.open("rb") as source:
+                    figure = pickle.load(source)
+            except Exception as exc:
+                fallback = path.with_suffix(".png")
+                if not fallback.is_file():
+                    messagebox.showerror("Cannot load figure", str(exc))
+                    return
+                path = fallback
+                figure = Figure(figsize=(9, 4), dpi=100)
+                axes = figure.add_subplot(111)
+                axes.imshow(matplotlib_image.imread(str(path)))
+                axes.axis("off")
+                figure.tight_layout(pad=.1)
         else:
             figure = Figure(figsize=(9, 4), dpi=100)
             axes = figure.add_subplot(111)
@@ -1149,15 +1176,41 @@ class JorekPanel(tk.Tk):
         )
         if not selected:
             return
+        target = Path(selected)
+        temporary_name = None
+        target_mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
         try:
-            with Path(selected).open("wb") as output:
+            with tempfile.NamedTemporaryFile(
+                "wb", delete=False, dir=target.parent,
+                prefix=".{}.".format(target.name), suffix=".tmp",
+            ) as output:
                 pickle.dump(
                     self.plot_result_figure, output, protocol=pickle.HIGHEST_PROTOCOL,
                 )
-        except (OSError, pickle.PickleError) as exc:
+                temporary_name = output.name
+            if target_mode is not None:
+                os.chmod(temporary_name, target_mode)
+            os.replace(temporary_name, target)
+            temporary_name = None
+        except Exception as exc:
             messagebox.showerror("Cannot export figure", str(exc))
             return
+        finally:
+            if temporary_name:
+                try:
+                    Path(temporary_name).unlink()
+                except OSError:
+                    pass
         self.plot_image_status.set("Exported {}".format(selected))
+
+    @staticmethod
+    def _cleanup_plot_directory(path) -> None:
+        if path is None:
+            return
+        try:
+            shutil.rmtree(str(path))
+        except OSError:
+            pass
 
     def open_plot_standalone(self) -> None:
         """Open an independent, resizable copy with a full Matplotlib toolbar."""
@@ -1552,6 +1605,10 @@ class JorekPanel(tk.Tk):
         self.operation_process = None
         self.plot_process = None
         self.command_processes.clear()
+        self._cleanup_plot_directory(self.plot_previous_output_directory)
+        self._cleanup_plot_directory(self.plot_output_directory)
+        self.plot_previous_output_directory = None
+        self.plot_output_directory = None
         self.quit()
         self.destroy()
 

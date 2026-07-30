@@ -36,14 +36,6 @@ def parse_command_line():
     return output_directory, mode, command
 
 
-def expand_globs(arguments):
-    expanded = []
-    for argument in arguments:
-        matches = sorted(glob.glob(argument)) if any(char in argument for char in "*?[") else []
-        expanded.extend(matches or [argument])
-    return expanded
-
-
 def save_matplotlib_figures(output_directory):
     import matplotlib.pyplot as plt
 
@@ -82,7 +74,10 @@ def run_python(output_directory, command):
 
     script = Path(command[0]).resolve()
     sys.path.insert(0, str(script.parent))
-    sys.argv = [str(script)] + expand_globs(command[1:])
+    # File-pattern expansion is performed by jorek_core only for fields marked
+    # as file paths. Expanding every CLI token here corrupts titles and labels
+    # containing characters such as *, ?, or [.
+    sys.argv = [str(script)] + command[1:]
     plt.show = lambda *args, **kwargs: None
     original_parse_args = None
     if script.name == "plot_f_versus_time.py":
@@ -197,7 +192,12 @@ def run_live_data(output_directory, command):
     for column in range(first_y, data.shape[1]):
         label = header[column] if column < len(header) else "column {}".format(column + 1)
         axis.plot(data[:, 0] * x_factor, data[:, column] * y_factor, label=label)
-    axis.set_title(quantity_name)
+    title_suffix = ""
+    for flag in ("-title", "-t"):
+        if flag in arguments and arguments.index(flag) + 1 < len(arguments):
+            title_suffix = arguments[arguments.index(flag) + 1]
+            break
+    axis.set_title("{} {}".format(quantity_name, title_suffix).strip())
     axis.set_xlabel(xlabel)
     axis.set_ylabel(ylabel)
     if "-log" in arguments:
@@ -251,9 +251,15 @@ def run_grid(output_directory, command):
     name_filter = ""
     if "-o" in arguments and arguments.index("-o") + 1 < len(arguments):
         name_filter = arguments[arguments.index("-o") + 1]
+    if "/" in name_filter or os.sep != "/" and os.sep in name_filter:
+        raise ValueError("Grid name filter must not contain a path separator")
+    # pathlib rejects patterns such as ``grid_**.dat`` even though the shell
+    # utility accepts wildcard filters.  glob.glob supports the same
+    # non-recursive wildcard form as plot_grids.sh.
     pattern = "grid_*{}*.dat".format(name_filter) if name_filter else "grid_*.dat"
     grid_paths = sorted(
-        Path(".").glob(pattern), key=lambda path: path.stat().st_mtime
+        (Path(path) for path in glob.glob(pattern)),
+        key=lambda path: path.stat().st_mtime,
     )
     if not grid_paths:
         raise RuntimeError("No grid data found for pattern {}".format(pattern))

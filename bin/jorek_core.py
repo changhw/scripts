@@ -1,11 +1,13 @@
 """Shared parsing, editing, processing, and visualization helpers for JOREK panels."""
 
 import bisect
+import glob
 import math
 import os
 import re
 import shlex
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -445,7 +447,7 @@ def path_completions(directory, value, kind="file", multi=False, limit=50):
     return suggestions
 
 
-def _plot_arguments(plot_name, values):
+def _plot_arguments(plot_name, values, glob_directory=None):
     if plot_name not in _PLOT_BY_NAME:
         raise ValueError("Unknown JOREK plot: {}".format(plot_name))
     values = values or {}
@@ -475,6 +477,32 @@ def _plot_arguments(plot_name, values):
                 arguments.extend([field["flag"], "true" if enabled else "false"])
             continue
         parts = _split_plot_value(field["label"], value) if field.get("multi") else [value]
+        if (
+            glob_directory is not None and field.get("path_kind") == "file"
+            and field.get("multi")
+        ):
+            expanded = []
+            root = Path(glob_directory).expanduser().resolve()
+            for part in parts:
+                pattern = Path(part).expanduser()
+                search_pattern = pattern if pattern.is_absolute() else root / pattern
+                matches = (
+                    sorted(
+                        match for match in glob.glob(str(search_pattern))
+                        if Path(match).is_file()
+                    )
+                    if glob.has_magic(part) else []
+                )
+                if matches:
+                    for match in matches:
+                        match_path = Path(match)
+                        try:
+                            expanded.append(match_path.relative_to(root).as_posix())
+                        except ValueError:
+                            expanded.append(str(match_path))
+                else:
+                    expanded.append(part)
+            parts = expanded
         if field.get("flag"):
             if plot_name == "plot_live_data" and field_name == "title":
                 flag = "-title"
@@ -527,7 +555,10 @@ def resolve_plot_values(values, parameter_values=None):
     return resolved
 
 
-def jorek_plot_command(plot_name, values, output_directory, parameter_values=None):
+def jorek_plot_command(
+    plot_name, values, output_directory, parameter_values=None,
+    working_directory=None,
+):
     """Build a headless plot-capture command for a JOREK utility script."""
     if plot_name not in _PLOT_BY_NAME:
         raise ValueError("Unknown JOREK plot: {}".format(plot_name))
@@ -545,7 +576,10 @@ def jorek_plot_command(plot_name, values, output_directory, parameter_values=Non
     return [
         sys.executable, "-u", str(runner), "--output-dir", str(output_directory),
         "--mode", plot["mode"], "--", str(script),
-    ] + _plot_arguments(plot_name, resolve_plot_values(values, parameter_values))
+    ] + _plot_arguments(
+        plot_name, resolve_plot_values(values, parameter_values),
+        glob_directory=working_directory if working_directory is not None else Path.cwd(),
+    )
 
 
 def format_plot_command(plot_name, values=None, parameter_values=None):
@@ -698,6 +732,8 @@ def read_numeric_file(path):
 
 
 def interpolate(source_x, source_y, target_x):
+    if len(source_x) != len(source_y) or not source_x:
+        raise ValueError("Interpolation source must contain matching x and y values")
     points = sorted(zip(source_x, source_y))
     xs, ys = [p[0] for p in points], [p[1] for p in points]
     result = []
@@ -751,6 +787,7 @@ def replace_assignment_value(line, name, new_value):
 
 
 def update_parameter(path, line_number, name, new_value):
+    original_mode = stat.S_IMODE(path.stat().st_mode)
     with path.open("r", encoding="utf-8", errors="replace", newline="") as source:
         lines = source.readlines()
     if not 1 <= line_number <= len(lines):
@@ -762,6 +799,7 @@ def update_parameter(path, line_number, name, new_value):
                                          dir=path.parent, prefix=".jorek-web-", suffix=".tmp") as temporary:
             temporary.writelines(lines)
             temporary_name = temporary.name
+        os.chmod(temporary_name, original_mode)
         os.replace(temporary_name, str(path))
     finally:
         if temporary_name and os.path.exists(temporary_name):
