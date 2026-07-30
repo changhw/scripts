@@ -605,6 +605,10 @@ class JorekPanel(tk.Tk):
             "BackSpace", "Delete", "Left", "Right", "Up", "Down",
             "Home", "End", "Escape", "Return", "Tab",
         }
+        popup_control_keys = {
+            "Left", "Right", "Up", "Down", "Home", "End",
+            "Escape", "Return", "Tab",
+        }
 
         def refresh(event=None):
             typed = variable.get()
@@ -613,6 +617,10 @@ class JorekPanel(tk.Tk):
                 bool(field.get("multi")),
             )
             widget.configure(values=suggestions)
+            if event is not None and event.keysym not in popup_control_keys:
+                widget.after_idle(
+                    lambda: self._set_autocomplete_popup(widget, bool(suggestions))
+                )
             if (
                 event is None or event.keysym in navigation_keys
                 or not getattr(event, "char", "") or not suggestions
@@ -630,6 +638,23 @@ class JorekPanel(tk.Tk):
 
         widget.configure(postcommand=refresh)
         widget.bind("<KeyRelease>", refresh)
+
+    @staticmethod
+    def _set_autocomplete_popup(widget: ttk.Combobox, visible: bool) -> None:
+        """Post or hide a native combobox list without toggling it."""
+        try:
+            popdown = widget.tk.call(
+                "ttk::combobox::PopdownWindow", str(widget),
+            )
+            mapped = bool(int(widget.tk.call("winfo", "ismapped", popdown)))
+            if visible and not mapped:
+                widget.tk.call("ttk::combobox::Post", str(widget))
+            elif not visible and mapped:
+                widget.tk.call("ttk::combobox::Unpost", str(widget))
+        except (tk.TclError, ValueError):
+            # Some Tk themes do not expose the internal post/unpost helpers;
+            # the normal dropdown button remains available in that case.
+            return
 
     def _update_operation_preview(self) -> None:
         try:
