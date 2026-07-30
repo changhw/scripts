@@ -354,6 +354,10 @@ class JorekPanel(tk.Tk):
         self.plot_image_index = 0
         self.plot_output_directory = None
         self.command_processes = set()
+        self.autocomplete_popup = None
+        self.autocomplete_listbox = None
+        self.autocomplete_widget = None
+        self.autocomplete_variable = None
         self._configure_style()
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.exit_panel)
@@ -556,6 +560,7 @@ class JorekPanel(tk.Tk):
         self._refresh_operation_form()
 
     def _refresh_operation_form(self) -> None:
+        self._hide_autocomplete_popup()
         for widget in self.operation_field_frame.winfo_children():
             widget.destroy()
         self.operation_fields.clear()
@@ -605,10 +610,7 @@ class JorekPanel(tk.Tk):
             "BackSpace", "Delete", "Left", "Right", "Up", "Down",
             "Home", "End", "Escape", "Return", "Tab",
         }
-        popup_control_keys = {
-            "Left", "Right", "Up", "Down", "Home", "End",
-            "Escape", "Return", "Tab",
-        }
+        popup_hide_keys = {"Up", "Down", "Escape", "Return", "Tab"}
 
         def refresh(event=None):
             typed = variable.get()
@@ -617,9 +619,13 @@ class JorekPanel(tk.Tk):
                 bool(field.get("multi")),
             )
             widget.configure(values=suggestions)
-            if event is not None and event.keysym not in popup_control_keys:
+            if event is not None and event.keysym in popup_hide_keys:
+                self._hide_autocomplete_popup()
+            elif event is not None:
                 widget.after_idle(
-                    lambda: self._set_autocomplete_popup(widget, bool(suggestions))
+                    lambda: self._show_autocomplete_popup(
+                        widget, variable, suggestions,
+                    )
                 )
             if (
                 event is None or event.keysym in navigation_keys
@@ -638,23 +644,101 @@ class JorekPanel(tk.Tk):
 
         widget.configure(postcommand=refresh)
         widget.bind("<KeyRelease>", refresh)
+        widget.bind(
+            "<FocusOut>",
+            lambda _event: widget.after(100, self._hide_autocomplete_if_unfocused),
+            add="+",
+        )
+        widget.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._hide_autocomplete_popup(),
+            add="+",
+        )
 
-    @staticmethod
-    def _set_autocomplete_popup(widget: ttk.Combobox, visible: bool) -> None:
-        """Post or hide a native combobox list without toggling it."""
+    def _show_autocomplete_popup(
+        self, widget: ttk.Combobox, variable: tk.StringVar,
+        suggestions: List[str],
+    ) -> None:
+        """Show suggestions without taking keyboard focus from the input."""
         try:
-            popdown = widget.tk.call(
-                "ttk::combobox::PopdownWindow", str(widget),
-            )
-            mapped = bool(int(widget.tk.call("winfo", "ismapped", popdown)))
-            if visible and not mapped:
-                widget.tk.call("ttk::combobox::Post", str(widget))
-            elif not visible and mapped:
-                widget.tk.call("ttk::combobox::Unpost", str(widget))
-        except (tk.TclError, ValueError):
-            # Some Tk themes do not expose the internal post/unpost helpers;
-            # the normal dropdown button remains available in that case.
+            if not widget.winfo_exists() or self.focus_get() is not widget:
+                return
+        except tk.TclError:
             return
+        if not suggestions:
+            self._hide_autocomplete_popup()
+            return
+        if self.autocomplete_popup is None:
+            popup = tk.Toplevel(self)
+            popup.withdraw()
+            popup.overrideredirect(True)
+            listbox = tk.Listbox(
+                popup, activestyle="dotbox", exportselection=False,
+                takefocus=False, font=("Consolas", 9),
+            )
+            listbox.pack(fill="both", expand=True)
+            listbox.bind("<ButtonRelease-1>", self._accept_autocomplete_choice)
+            self.autocomplete_popup = popup
+            self.autocomplete_listbox = listbox
+        listbox = self.autocomplete_listbox
+        listbox.delete(0, "end")
+        for suggestion in suggestions:
+            listbox.insert("end", suggestion)
+        listbox.configure(height=min(8, len(suggestions)))
+        self.autocomplete_widget = widget
+        self.autocomplete_variable = variable
+        popup = self.autocomplete_popup
+        popup.update_idletasks()
+        width = max(widget.winfo_width(), 280)
+        height = listbox.winfo_reqheight()
+        popup.geometry(
+            "{}x{}+{}+{}".format(
+                width, height, widget.winfo_rootx(),
+                widget.winfo_rooty() + widget.winfo_height(),
+            )
+        )
+        popup.deiconify()
+        popup.lift()
+        # Creating or raising a Toplevel must not interrupt continued typing.
+        widget.focus_set()
+
+    def _accept_autocomplete_choice(self, event) -> str:
+        listbox = self.autocomplete_listbox
+        widget = self.autocomplete_widget
+        variable = self.autocomplete_variable
+        if listbox is None or widget is None or variable is None:
+            return "break"
+        index = listbox.nearest(event.y)
+        if index >= 0:
+            variable.set(listbox.get(index))
+            widget.focus_set()
+            widget.icursor("end")
+        self._hide_autocomplete_popup()
+        return "break"
+
+    def _hide_autocomplete_if_unfocused(self) -> None:
+        popup = self.autocomplete_popup
+        if popup is None:
+            return
+        try:
+            focus = self.focus_get()
+            if focus is self.autocomplete_widget:
+                return
+            if focus is not None and str(focus).startswith(str(popup)):
+                return
+        except tk.TclError:
+            pass
+        self._hide_autocomplete_popup()
+
+    def _hide_autocomplete_popup(self) -> None:
+        popup = self.autocomplete_popup
+        if popup is not None:
+            try:
+                popup.withdraw()
+            except tk.TclError:
+                pass
+        self.autocomplete_widget = None
+        self.autocomplete_variable = None
 
     def _update_operation_preview(self) -> None:
         try:
@@ -875,6 +959,7 @@ class JorekPanel(tk.Tk):
         self._refresh_plot_form()
 
     def _refresh_plot_form(self) -> None:
+        self._hide_autocomplete_popup()
         for widget in self.plot_field_frame.winfo_children():
             widget.destroy()
         self.plot_fields.clear()
