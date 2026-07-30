@@ -525,13 +525,24 @@ class JorekPanel(tk.Tk):
             parent, text="Arguments", padding=(10, 6),
         )
         self.operation_field_frame.pack(fill="x", pady=(10, 6))
-        self.operation_preview_var = tk.StringVar()
         preview = ttk.Labelframe(parent, text="Command preview", padding=7)
         preview.pack(fill="x", pady=5)
-        ttk.Label(
-            preview, textvariable=self.operation_preview_var,
-            font=("Consolas", 9), wraplength=1050,
-        ).pack(anchor="w")
+        preview_buttons = ttk.Frame(preview)
+        preview_buttons.pack(side="right", fill="y", padx=(7, 0))
+        ttk.Button(
+            preview_buttons, text="Copy command",
+            command=lambda: self._copy_text_widget(self.operation_preview),
+        ).pack()
+        self.operation_preview = tk.Text(
+            preview, height=2, wrap="none", font=("Consolas", 9),
+            state="disabled", exportselection=True,
+        )
+        preview_scroll = ttk.Scrollbar(
+            preview, orient="horizontal", command=self.operation_preview.xview,
+        )
+        self.operation_preview.configure(xscrollcommand=preview_scroll.set)
+        preview_scroll.pack(side="bottom", fill="x")
+        self.operation_preview.pack(side="left", fill="both", expand=True)
         buttons = ttk.Frame(parent)
         buttons.pack(fill="x", pady=5)
         self.operation_run_button = ttk.Button(
@@ -751,7 +762,7 @@ class JorekPanel(tk.Tk):
             )
         except ValueError as exc:
             preview = "Incomplete: {}".format(exc)
-        self.operation_preview_var.set(preview)
+        self._replace_text_widget(self.operation_preview, preview)
 
     def _choose_operation_directory(self) -> None:
         selected = filedialog.askdirectory(
@@ -899,19 +910,28 @@ class JorekPanel(tk.Tk):
 
         self.plot_field_frame = ttk.Labelframe(parent, text="Plot arguments", padding=(8, 5))
         self.plot_field_frame.pack(fill="x", pady=(5, 3))
-        command_row = ttk.Frame(parent)
+        command_row = ttk.Labelframe(parent, text="Command preview", padding=5)
         command_row.pack(fill="x", pady=3)
-        self.plot_preview_var = tk.StringVar()
-        ttk.Label(
-            command_row, textvariable=self.plot_preview_var, font=("Consolas", 9),
-            wraplength=900,
-        ).pack(side="left", fill="x", expand=True)
+        self.plot_preview = tk.Text(
+            command_row, height=2, wrap="none", font=("Consolas", 9),
+            state="disabled", exportselection=True,
+        )
+        plot_preview_scroll = ttk.Scrollbar(
+            command_row, orient="horizontal", command=self.plot_preview.xview,
+        )
+        self.plot_preview.configure(xscrollcommand=plot_preview_scroll.set)
+        plot_preview_scroll.pack(side="bottom", fill="x")
+        self.plot_preview.pack(side="left", fill="both", expand=True)
         self.plot_run_button = ttk.Button(command_row, text="Generate", command=self.run_plot)
         self.plot_run_button.pack(side="right", padx=(6, 0))
         self.plot_stop_button = ttk.Button(
             command_row, text="Stop", command=self.stop_plot, state="disabled",
         )
         self.plot_stop_button.pack(side="right")
+        ttk.Button(
+            command_row, text="Copy command",
+            command=lambda: self._copy_text_widget(self.plot_preview),
+        ).pack(side="right", padx=(6, 0))
 
         result = ttk.Panedwindow(parent, orient="vertical")
         result.pack(fill="both", expand=True, pady=(3, 0))
@@ -1026,7 +1046,7 @@ class JorekPanel(tk.Tk):
             )
         except ValueError as exc:
             preview = "Incomplete: {}".format(exc)
-        self.plot_preview_var.set(preview)
+        self._replace_text_widget(self.plot_preview, preview)
 
     def _choose_plot_directory(self) -> None:
         selected = filedialog.askdirectory(
@@ -1040,6 +1060,23 @@ class JorekPanel(tk.Tk):
         self.plot_output.insert("end", text)
         self.plot_output.see("end")
         self.plot_output.configure(state="disabled")
+
+    @staticmethod
+    def _replace_text_widget(widget: tk.Text, text: str) -> None:
+        """Replace the contents of a read-only text widget."""
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", text)
+        widget.configure(state="disabled")
+
+    def _copy_text_widget(self, widget: tk.Text) -> None:
+        """Copy an entire command preview to the system clipboard."""
+        text = widget.get("1.0", "end-1c")
+        if not text:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update_idletasks()
 
     def run_plot(self) -> None:
         if self.plot_process is not None:
