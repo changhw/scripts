@@ -353,8 +353,10 @@ class JorekPanel(tk.Tk):
         self.plot_images = []
         self.plot_image_index = 0
         self.plot_output_directory = None
+        self.command_processes = set()
         self._configure_style()
         self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self.exit_panel)
         if comparison_path is None:
             self.load_input(self.input_path)
         else:
@@ -371,6 +373,9 @@ class JorekPanel(tk.Tk):
         header = ttk.Frame(self, padding=(14, 12, 14, 8))
         header.pack(fill="x")
         ttk.Label(header, text="MHD Control Panel", style="Title.TLabel").pack(side="left")
+        ttk.Button(header, text="Exit", command=self.exit_panel).pack(
+            side="right", padx=(6, 0),
+        )
         ttk.Button(header, text="Open input...", command=self.choose_input).pack(side="right")
         ttk.Button(header, text="Compare two...", command=self.choose_comparison_inputs).pack(side="right", padx=6)
         self.path_label = ttk.Label(header, style="Muted.TLabel")
@@ -1339,6 +1344,7 @@ class JorekPanel(tk.Tk):
                 append_output("Cannot run command: {}\n".format(exc))
                 return
             state["process"] = process
+            self.command_processes.add(process)
             threading.Thread(
                 target=read_process, args=(process,), daemon=True,
             ).start()
@@ -1381,6 +1387,7 @@ class JorekPanel(tk.Tk):
                     )
                     if state["process"] is process:
                         state["process"] = None
+                    self.command_processes.discard(process)
             window.after(100, poll_output)
 
         def close_window() -> None:
@@ -1390,6 +1397,8 @@ class JorekPanel(tk.Tk):
                     os.killpg(process.pid, signal.SIGTERM)
                 except OSError:
                     process.terminate()
+            if process is not None:
+                self.command_processes.discard(process)
             window.destroy()
 
         ttk.Button(controls, text="Run", command=run_command).pack(side="left", padx=(6, 0))
@@ -1404,6 +1413,37 @@ class JorekPanel(tk.Tk):
         command_entry.focus_set()
         self.status_var.set("Opened built-in command window at {}".format(initial_directory))
         poll_output()
+
+    def exit_panel(self) -> None:
+        """Stop panel-owned jobs and close all windows cleanly."""
+        processes = []
+        for process in (
+            self.operation_process, self.plot_process, *self.command_processes,
+        ):
+            if process is not None and process.poll() is None and process not in processes:
+                processes.append(process)
+        if processes and not messagebox.askyesno(
+            "Exit MHD Control Panel",
+            "{} command{} still running. Stop {} and exit?".format(
+                len(processes), "" if len(processes) == 1 else "s",
+                "it" if len(processes) == 1 else "them",
+            ),
+            parent=self,
+        ):
+            return
+        for process in processes:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except OSError:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+        self.operation_process = None
+        self.plot_process = None
+        self.command_processes.clear()
+        self.quit()
+        self.destroy()
 
     def choose_comparison_inputs(self) -> None:
         selected = filedialog.askopenfilenames(
