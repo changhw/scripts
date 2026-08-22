@@ -1110,3 +1110,4 @@ export one_over_u0=795774.7154594767  # 1/u0
 # convert2vtk.sh -si -only 500 -j 8 ./jorek2vtk input
 export PYTHONSTARTUP=$HOME/scripts/.pythonrc
 alias rm_non_hundred_h5='mv jorek????[1-9]?.h5 jorek?????[1-9].h5 ~/Trash/'
+export JOREK_BASHRC="$HOME/scripts/my_bashrc"
