@@ -1,16 +1,8 @@
 #!/bin/bash
 export LESS=-R
-
-# Add helper directories once, even if this file is sourced repeatedly.
-for bashrc_path in "$HOME/jorek/util" "$HOME/scripts/bin" "$HOME/scripts/screenFetch"; do
-  [[ -d "$bashrc_path" ]] || continue
-  case ":$PATH:" in
-    *":$bashrc_path:"*) ;;
-    *) PATH="$bashrc_path${PATH:+:$PATH}" ;;
-  esac
-done
-export PATH
-unset bashrc_path
+export PATH=~/jorek/util/:$PATH
+export PATH=~/scripts/bin/:$PATH
+export PATH=~/scripts/screenFetch:$PATH
 
 #ulimit -s unlimited
 #ulimit -m unlimited
@@ -34,10 +26,7 @@ alias dsgetmykeys='cd ~/.ssh/ && ds get mykeys/my_key.pub mykeys/my_key mykeys/m
 # alias mysq="squeue -u $USER"
 # alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%30,state,start,end,elapsed,nnodes,WorkDir%180 | grep "$USER " | grep "RUNNING\|PENDING"'
 alias sqdir='scontrol show job | grep "WorkDir=$WORKDIR"'
-unalias mysq 2>/dev/null || true
-mysq() {
-  squeue -o '%.29j %.10i %.8q %.8M %.3D %.3L %.1T %.17r %.8u' -u "$USER" "$@"
-}
+alias mysq="squeue -o '%.29j %.10i %.8q %.8M %.3D %.3L %.1T %.17r %.8u' -u $USER"
 alias sqhist='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%30,state,start,end,elapsed,nnodes,WorkDir%180 | grep "$USER "'
 alias sqnow='sacct --starttime 2023-08-09 --format=User,JobID,Jobname%20,state,WorkDir%180 | grep "$USER " | grep "RUNNING\|PENDING"'
 alias watchsq='watch -n 1 squeue -u $USER'
@@ -211,26 +200,25 @@ jorek_post_time() {
 
 jorek_post_count() {
     local directory="$1"
-    local prefix count
     
     # Check if directory is provided, otherwise use current directory
     if [ -z "$directory" ]; then
 		directory="postproc/"
     fi
     # Count files with the specified prefix
-    prefix="fluxsurfaces_s"
-    count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+    local prefix="fluxsurfaces_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
-    prefix="qprofile_s"
-    count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+    local prefix="qprofile_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
-    prefix="exprs_averaged_s"
-    count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+    local prefix="exprs_averaged_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
-    prefix="exprs_midplane_s"
-    count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
+    local prefix="exprs_midplane_s"
+    local count=$(find "$directory" -type f -name "${prefix}*" | wc -l)
 	echo "Find $count ${prefix}* files."
-    count=$(find ./ -maxdepth 1 -type f -name "jorek*.h5" | wc -l)
+    local count=$(find ./ -maxdepth 1 -type f -name "jorek*.h5" | wc -l)
         echo "Find $count jorek*.h5 files."
 }
 
@@ -253,16 +241,16 @@ jorek_post_all() {
     mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
-    mapfile -t ids_exist < <(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/')
+    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'fluxsurfaces_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'qprofile_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
-  mapfile -t sorted_ids < <(printf "%s\n" "${ids[@]}" | sort -n)
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
   # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
   for id in "${sorted_ids[@]}"; do
-    if [[ " ${unique_ids[*]} " != *" $id "* ]] && [[ " ${ids_exist[*]} " != *" $id "* ]]; then
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
       unique_ids+=("$id")
     fi
   done
@@ -322,13 +310,13 @@ jorek_post_all_reduced() {
     # Extract IDs and store them in an array
     mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
-    mapfile -t ids_exist < <(find ./postproc_reduced/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/')
+    ids_exist=($(find ./postproc_reduced/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
-  mapfile -t sorted_ids < <(printf "%s\n" "${ids[@]}" | sort -n)
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
   # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
   for id in "${sorted_ids[@]}"; do
-    if [[ " ${unique_ids[*]} " != *" $id "* ]] && [[ " ${ids_exist[*]} " != *" $id "* ]]; then
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
       unique_ids+=("$id")
     fi
   done
@@ -397,16 +385,16 @@ jorek_post_all_ompnum() {
     mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
     # ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE 'exprs_averaged_s[0-9]+\.dat' | sed 's/exprs_averaged_s\([0-9]\+\)\.dat/\1/'))
-    mapfile -t ids_exist < <(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/')
+    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_midplane_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'exprs_averaged_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'fluxsurfaces_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
 #    ids_exist=($(find ./postproc/ -maxdepth 1 -type f -name 'qprofile_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
-  mapfile -t sorted_ids < <(printf "%s\n" "${ids[@]}" | sort -n)
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
   # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
   for id in "${sorted_ids[@]}"; do
-    if [[ " ${unique_ids[*]} " != *" $id "* ]] && [[ " ${ids_exist[*]} " != *" $id "* ]]; then
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
       unique_ids+=("$id")
     fi
   done
@@ -464,7 +452,7 @@ jorek_poincare_all() {
                   shift 2
               else
                   echo "Error: Missing argument for -fn flag (the input file)."
-                  return 1
+                  exit 1
               fi
               ;;
           *)
@@ -481,17 +469,17 @@ jorek_poincare_all() {
   # else
   if [ ${#ids[@]} -gt 0 ]; then
     mapfile -t ids < <(jorek_expand_id_args "${ids[@]}")
-    echo "Ids is not empty: ${ids[*]}"
+    echo "Ids is not empty: ${ids[@]}"
   else
     # Extract IDs and store them in an array
     mapfile -t ids < <(jorek_list_h5_ids)
-    mapfile -t ids_exist < <(find ./poincares/ -maxdepth 1 -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/')
+    ids_exist=($(find ./poincares/ -maxdepth 1 -type f -name 'poinc_R-Z_s*.dat' | grep -oE '_s[0-9]+\.dat' | sed 's/_s\([0-9]\+\)\.dat/\1/'))
   fi
-  mapfile -t sorted_ids < <(printf "%s\n" "${ids[@]}" | sort -n)
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
   # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
   for id in "${sorted_ids[@]}"; do
-    if [[ " ${unique_ids[*]} " != *" $id "* ]] && [[ " ${ids_exist[*]} " != *" $id "* ]]; then
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
       unique_ids+=("$id")
     fi
   done
@@ -583,33 +571,15 @@ make_jorek_gnu() {
   local usage="Usage: make_jorek_gnu [model(=7xx) ntor(=2*n_max+1) nperiod(=1, usually) nplane(>=4*n_max)]"
   local description="This function compiles executable files for specified model and parameters."
   local help_text="$usage\n$description"
-  local gnu_env_file="$HOME/source_gnu_env.sh"
   if [ $# -eq 0 ]; then
     echo -e "$help_text"
     echo "Example: make_jorek_gnu 710 5 1 8"
     return
   fi
 
-  if [[ ! -r "$gnu_env_file" ]]; then
-    printf 'Error: GNU environment file is not readable: %s\n' "$gnu_env_file" >&2
-    return 1
-  fi
-
-  if ! cp Makefile.inc Makefile_backup_temp.inc; then
-    printf '%s\n' 'Error: could not back up Makefile.inc.' >&2
-    return 1
-  fi
-  if ! cp Makefile_gnu.inc Makefile.inc; then
-    printf '%s\n' 'Error: could not activate Makefile_gnu.inc.' >&2
-    command mv Makefile_backup_temp.inc Makefile.inc
-    return 1
-  fi
-  # shellcheck source=/dev/null
-  if ! source "$gnu_env_file"; then
-    printf 'Error: failed to load GNU environment from %s\n' "$gnu_env_file" >&2
-    command mv Makefile_backup_temp.inc Makefile.inc
-    return 1
-  fi
+  cp Makefile.inc Makefile_backup_temp.inc
+  cp Makefile_gnu.inc Makefile.inc
+  source ~/source_gnu_env.sh
 
   local para_model="$1"
   local para_ntor="$2"
@@ -631,9 +601,8 @@ make_jorek_gnu() {
   make -j 8 jorek2vtk jorek2_postproc jorek2_poincare jorek2_four jorek2_target2vtk jorek2vtk_3d q_fmhd jorek2_fieldlines_vtk_newdiag #q_fmhd_3D
   mv "$origin_file" "$new_file" && make install
   cp models/model$para_model/mod_elt_matrix_fft.f90 bin/
-  command mv Makefile_backup_temp.inc Makefile.inc
-  # shellcheck source=/dev/null
-  source "$HOME/.bashrc"
+  mv Makefile_backup_temp.inc Makefile.inc
+  source ~/.bashrc
   
   unset pfix underscore ext origin_file new_file
 }
@@ -894,7 +863,7 @@ jorek_four_all() {
                   shift 2
               else
                   echo "Error: Missing argument for -fn flag (the input file)."
-                  return 1
+                  exit 1
               fi
               ;;
           *)
@@ -907,18 +876,18 @@ jorek_four_all() {
   # Check if an ID was provided as a parameter
   if [ ${#ids[@]} -gt 0 ]; then
     mapfile -t ids < <(jorek_expand_id_args "${ids[@]}")
-    echo "Ids is not empty: ${ids[*]}"
+    echo "Ids is not empty: ${ids[@]}"
   else
     # Extract IDs and store them in an array
     mapfile -t ids < <(jorek_list_h5_ids)
     # print_array "${ids[@]}"
-	mapfile -t ids_exist < <(find ./four_results/ -maxdepth 1 -type f -name 'Uphi_n000_m000_step*' | grep -oE 'step[0-9]+' | sed 's/step//')
+	ids_exist=($(find ./four_results/ -maxdepth 1 -type f -name 'Uphi_n000_m000_step*' | grep -oE 'step[0-9]+' | sed 's/step//'))
   fi
-  mapfile -t sorted_ids < <(printf "%s\n" "${ids[@]}" | sort -n)
+  sorted_ids=($(printf "%s\n" "${ids[@]}" | sort -n))
 
   # Loop through the sorted IDs and exist IDs and add them to unique_ids if they are not already in it
   for id in "${sorted_ids[@]}"; do
-    if [[ " ${unique_ids[*]} " != *" $id "* ]] && [[ " ${ids_exist[*]} " != *" $id "* ]]; then
+    if [[ ! " ${unique_ids[@]} " =~ " $id " ]] && [[ ! " ${ids_exist[@]} " =~ " $id " ]]; then
       unique_ids+=("$id")
     fi
   done
