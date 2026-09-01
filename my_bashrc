@@ -821,6 +821,42 @@ bpeek() {
   egrep --text -i 'info\(2|time iterat|time step :|min,max deltas' $filename
 }
 
+bpeek_kinetic() {
+  local filename="${1:-logfile}"
+
+  awk '
+    {
+      lower = tolower($0)
+    }
+
+    /block done in/ {
+      timing = $0
+    }
+
+    lower ~ /starting main loop iteration sim%istep_fluid =/ {
+      # Bold red
+      printf "\033[1;31m%s\033[0m\n", $0
+      next
+    }
+
+    /After step[[:space:]]+[0-9]+/ {
+      # Red
+      printf "\033[31m%s\033[0m\n", $0
+      next
+    }
+
+    lower ~ /info\(2|time iterat|time step :|min,max deltas/ {
+      print
+    }
+
+    /Projecting feedback from particles to fluid FE grid/ {
+      if (timing != "") {
+        print timing
+      }
+    }
+  ' "$filename"
+}
+
 #stopJorekAfterHours() {
 #    time="$1"
 #	echo "touch STOP_NOW" | at now + $time hours
