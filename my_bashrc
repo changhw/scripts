@@ -811,17 +811,9 @@ time2si() {
   echo $time2si
 }
 
+
+# bpeek_kinetic
 bpeek() {
-  if [ -n "$1" ]; then
-    filename="$1"
-  else
-    filename=logfile
-  fi
-
-  egrep --text -i 'info\(2|time iterat|time step :|min,max deltas' $filename
-}
-
-bpeek_kinetic() {
   local filename="${1:-logfile}"
 
   awk '
@@ -834,14 +826,14 @@ bpeek_kinetic() {
     }
 
     lower ~ /starting main loop iteration sim%istep_fluid =/ {
-      # Bold red
-      printf "\033[1;31m%s\033[0m\n", $0
+      # Red
+      printf "\033[31m%s\033[0m\n", $0
       next
     }
 
     /After step[[:space:]]+[0-9]+/ {
-      # Red
-      printf "\033[31m%s\033[0m\n", $0
+      # Bold red
+      printf "\033[1;31m%s\033[0m\n", $0
       next
     }
 
@@ -855,6 +847,16 @@ bpeek_kinetic() {
       }
     }
   ' "$filename"
+}
+
+bpeek_MHD() {
+  if [ -n "$1" ]; then
+    filename="$1"
+  else
+    filename=logfile
+  fi
+
+  egrep --text -i 'info\(2|time iterat|time step :|min,max deltas' $filename
 }
 
 #stopJorekAfterHours() {
@@ -1106,6 +1108,35 @@ get_time_from_step() {
         echo "$result"
     fi
 }
+
+
+check_mhd_time() {
+    local file="${1:-jorek_restart.h5}"
+    h5dump -d /index_now -d /t_now "$file"
+}
+
+check_particle_time() {
+    local file="${1:-part_restart.h5}"
+
+    local time2si
+    time2si=$(grep "@times_y2si:" macroscopic_vars.dat | awk '{print $2}')
+
+    local ptime
+    ptime=$(h5dump -d /time "$file" 2>/dev/null \
+        | awk '/^[[:space:]]*\([0-9]+\):/ {gsub(/,/, "", $2); print $2; exit}')
+
+    local converted
+    converted=$(awk -v t="$ptime" -v t2si="$time2si" \
+        'BEGIN { printf "%.10g", t / (1e-3 * t2si) }')
+
+    echo "particle /time : $ptime"
+    echo "converted time : $converted"
+}
+
+#check_particle_time() {
+#    local file="${1:-part_restart.h5}"
+#    h5dump -d /time "$file"
+#}
 
 # Function to quickly rename the xterm window title
 title_xterm() {
