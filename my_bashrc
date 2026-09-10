@@ -838,6 +838,7 @@ bpeek() {
     }
 
     lower ~ /info\(2|time iterat|time step :|min,max deltas/ {
+#    lower ~ /info\time iterat|time step :|min,max deltas/ {
       print
     }
 
