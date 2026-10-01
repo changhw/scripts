@@ -1157,6 +1157,7 @@ export one_over_u0=795774.7154594767  # 1/u0
 
 
 # useful commands
+# analyze_mode_structure_fft.py U_radial --m 10 --n 6 --radius 0.5 --time 0.4 --window-samples 64 --si true --show true
 # plot_q_versus_time.py -xm $time2si -xl "time [ms]" -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_f_versus_time.py -xm $time2si -fn exprs_midplane -yc 7 -xl "time [ms]" -clim -0.0000001 0.0000001 # -ylim 0.0707 0.5 -cs 1.0 1.01 #-clim 0.928 1.300 -cs 0.99 1.0
 # plot_f_versus_time.py -xm $time2si -fn exprs_averaged -yc 7 -xl "time [ms]" -clim -0.0000001 0.0000001
