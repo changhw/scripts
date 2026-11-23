@@ -1,0 +1,51 @@
+#!/bin/bash
+#------- qsub option -----------
+#PBS -P MHD_CPED
+#PBS -q A_M
+	### A_dev, A_S, A_M, A_L
+#PBS -l select=5:ncpus=256:mem=752gb:mpiprocs=16:ompthreads=16
+#PBS -l walltime=24:00:00
+
+#PBS -N jorek_JET
+#OUT="${PBS_O_WORKDIR}/${PBS_JOBNAME}.${PBS_JOBID}.out"
+#ERR="${PBS_O_WORDDIR}/${PBS_JOBNAME}.${PBS_JOBID}.err"
+#exec >"$OUT" 2>"$ERR"
+
+#------- Program execution -----------
+module purge
+module load intel/2025.1
+module load hdf5/1.14.6/oneapi2025.1
+cd ${PBS_O_WORKDIR}
+#export I_MPI_DEBUG=4
+export I_MPI_OFI_PROVIDER=psm3
+
+
+# Extract time from PBS script ("$0" => this)
+# Note: PBS walltime is typically in HH:MM:SS format
+TIME_STRING=$(grep -oP '(?<=#PBS -l walltime=)[0-9:]+' "$0")
+
+# Convert to seconds
+IFS=':' read -ra TIME_PARTS <<< "$TIME_STRING"
+
+if [ ${#TIME_PARTS[@]} -eq 3 ]; then
+    # HH:MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 3600 + 10#${TIME_PARTS[1]} * 60 + 10#${TIME_PARTS[2]}))
+elif [ ${#TIME_PARTS[@]} -eq 2 ]; then
+    # MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 60 + 10#${TIME_PARTS[1]}))
+else
+    TIME_IN_SECONDS=0
+fi
+
+# Safety check: ensure we don't sleep for a negative duration if the walltime is < 5 mins
+SLEEP_DURATION=$(( TIME_IN_SECONDS - 300 ))
+if [ $SLEEP_DURATION -gt 0 ]; then
+    ( sleep $SLEEP_DURATION; touch STOP_NOW ) &
+fi
+
+echo "TIME_STRING: $TIME_STRING"
+echo "Time limit in seconds: $TIME_IN_SECONDS"
+
+
+
+mpirun ./jorek_model711_17_1_64 < ./input | tee logfile

@@ -1,0 +1,39 @@
+#!/bin/bash
+ 
+#SBATCH -J jorek_JET_ntor1
+#SBATCH -A FUSIO_BA7MHD_C
+#SBATCH -p dcgp_fua_prod
+#SBATCH --account=FUPA2_LOWPRIO
+#SBATCH --qos=qos_fualowprio
+ 
+#SBATCH --nodes=2
+##SBATCH --cores-per-socket=128                  # 128*2 sockets
+#SBATCH --ntasks-per-node=16                   # number of tasks per node
+#SBATCH --cpus-per-task=16                     # number of cores per task max 32 cores per node
+ 
+#SBATCH --mem=750000                           # memory per node
+ 
+#SBATCH --time=08:00:00
+#SBATCH --output=./%x.%j.out
+#SBATCH --error=./%x.%j.err
+ 
+ 
+### Request e-mail notification
+#SBATCH --mail-type=FAIL   # can be BEGIN, END, TIME_LIMIT, FAIL, ALL, NONE
+#SBATCH --mail-user=hazh@ipp.mpg.de
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+module load intel-oneapi-mpi/
+module load intel-oneapi-compilers
+module load intel-oneapi-mkl/2024.0.0--intel-oneapi-mpi--2021.12.1
+module load hdf5/1.14.3--intel-oneapi-mpi--2021.12.1--oneapi--2024.1.0
+module load cintools/1.0
+
+#unset UCX_TLS
+#export FI_PROVIDER=tcp
+
+cp input_ntor1 input_ntor1.$SLURM_JOB_ID
+srun ./jorek_model711_1_1_1 < ./input_ntor1 | tee logfile
+# cinhak --filename=logfile 
+# mpirun -np $SLURM_NTASKS ./jorek_model711_1_1_1 < ./input_ntor1 | tee logfile

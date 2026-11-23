@@ -1,0 +1,43 @@
+#!/bin/bash -l
+#SBATCH --exclusive
+#SBATCH -J jorek_JET               #Job name
+#SBATCH -o ./%x.%j.out             #stdout (%x=jobname, %j=jobid)
+#SBATCH -e ./%x.%j.err             #stderr (%x=jobname, %j=jobid)
+#SBATCH -D ./                      #Initial working directory
+#SBATCH --partition=p.tok          #Queue/Partition
+#SBATCH --qos=p.tok.24h            #Quality of Service: p.tok.2h, p.tok.48h, tok.debug
+#SBATCH --nodes=5                  #Total number of nodes  
+#SBATCH --ntasks-per-node=16       #MPI tasks per node
+#SBATCH --cpus-per-task=16         #CPUs per task for OpenMP
+#SBATCH --mem 712GB                #Set mem./node requirement (default: 63000MB, max: 190GB)
+#SBATCH --time=24:00:00            #Wall clock limit
+##
+#SBATCH --mail-type=end            #Send mail, e.g. for begin/end/fail/none
+#SBATCH --mail-user=hazh@rzg.mpg.de  #Mail address
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
+# For pinning threads correctly:
+# export OMP_PLACES=cores 
+
+# Extract time from SLURM script ("$0" => this)
+TIME_STRING=$(grep -oP '(?<=#SBATCH --time=)[0-9:-]+' "$0")
+
+# Convert to seconds
+IFS=':' read -ra TIME_PARTS <<< "$TIME_STRING"
+if [ ${#TIME_PARTS[@]} -eq 3 ]; then
+    # HH:MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 3600 + 10#${TIME_PARTS[1]} * 60 + 10#${TIME_PARTS[2]}))
+elif [ ${#TIME_PARTS[@]} -eq 2 ]; then
+    # MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 60 + 10#${TIME_PARTS[1]}))
+else
+    TIME_IN_SECONDS=0
+fi
+
+( sleep $(( $TIME_IN_SECONDS - 300 )); touch STOP_NOW ) &
+
+echo "TIME_STRING: $TIME_STRING"
+echo "Time limit in seconds: $TIME_IN_SECONDS"
+
+# Run the program:
+srun jorek_model711_17_1_64 < input | tee logfile

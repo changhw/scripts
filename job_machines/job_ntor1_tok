@@ -1,0 +1,49 @@
+#!/bin/bash -l
+#SBATCH -J jorek_JET_ntor1         #Job name
+#SBATCH -o ./%x.%j.out             #stdout (%x=jobname, %j=jobid)
+#SBATCH -e ./%x.%j.err             #stderr (%x=jobname, %j=jobid)
+#SBATCH -D ./                      #Initial working directory
+#SBATCH --partition=p.tok.openmp   #Queue/Partition
+#SBATCH --qos=p.tok.openmp.24h     #Quality of Service: p.tok.2h, p.tok.48h, tok.debug
+#SBATCH --nodes=1                  #Total number of nodes  
+#SBATCH --ntasks-per-node=16       #MPI tasks per node
+#SBATCH --cpus-per-task=16         #CPUs per task for OpenMP
+#SBATCH --mem 712GB                #Set mem./node requirement (default: 63000MB, max: 190GB)
+#SBATCH --time=24:00:00            #Wall clock limit
+##
+#SBATCH --mail-type=end            #Send mail, e.g. for begin/end/fail/none
+#SBATCH --mail-user=hazh@rzg.mpg.de  #Mail address
+
+
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
+# For pinning threads correctly:
+export OMP_PLACES=cores 
+export LD_LIBRARY_PATH=$MKL_HOME/lib/intel64/:$LD_LIBRARY_PATH
+# Below is necessary to run on openmp partition
+export LD_LIBRARY_PATH=/mpcdf/soft/SLE_15/packages/x86_64/intel_oneapi/2025.1/compiler/2025.1/lib/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/mpcdf/soft/SLE_15/packages/x86_64/intel_oneapi/2025.1/mpi/2021.15/lib/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/u/hazh/Downloads/libs:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/mpcdf/soft/SLE_15/packages/znver4/hdf5/intel_2025.1-2025.1.0-impi_2021.15-2021.15.0/1.14.1/lib/:$LD_LIBRARY_PATH
+
+# Extract time from SLURM script ("$0" => this)
+TIME_STRING=$(grep -oP '(?<=#SBATCH --time=)[0-9:-]+' "$0")
+
+# Convert to seconds
+IFS=':' read -ra TIME_PARTS <<< "$TIME_STRING"
+if [ ${#TIME_PARTS[@]} -eq 3 ]; then
+    # HH:MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 3600 + 10#${TIME_PARTS[1]} * 60 + 10#${TIME_PARTS[2]}))
+elif [ ${#TIME_PARTS[@]} -eq 2 ]; then
+    # MM:SS
+    TIME_IN_SECONDS=$((10#${TIME_PARTS[0]} * 60 + 10#${TIME_PARTS[1]}))
+else
+    TIME_IN_SECONDS=0
+fi
+
+( sleep $(( $TIME_IN_SECONDS - 300 )); touch STOP_NOW ) &
+
+echo "TIME_STRING: $TIME_STRING"
+echo "Time limit in seconds: $TIME_IN_SECONDS"
+
+# Run the program:
+srun jorek_model711_1_1_1 < input_ntor1 | tee logfile

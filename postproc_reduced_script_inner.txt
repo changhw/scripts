@@ -1,0 +1,74 @@
+namelist input_ntor1
+si-units
+set surfaces 200
+
+expressions rho_p pres minus_v_graP minus_P_divV perp_P_trans para_P_trans heat_source dPdt VXBt VXBt_all VXBt00 VXB_para VXB_para_all
+set nsmallsteps 12
+set nmaxsteps 10000
+
+set_postproc_dir postproc_inner_reduced
+set surfaces 200
+set rad_range_min 0.000005
+set rad_range_max 0.001
+for step xxxxxx do
+    average
+done
+set surfaces 202
+set qprofile_psin_min 0
+set qprofile_psin_max 0.001005
+for step xxxxxx do
+    qprofile
+done
+
+set surfaces 298
+set rad_range_min 0.002
+set rad_range_max 0.999
+for step xxxxxx do
+    average append
+done
+set surfaces 300
+set qprofile_psin_min 0.001
+set qprofile_psin_max 1
+for step xxxxxx do
+    qprofile append
+done
+
+!set surfaces 199
+!set rad_range_min 0.999005
+!set rad_range_max 0.999995
+!for step xxxxxx do
+!    average append
+!done
+!set surfaces 201
+!set qprofile_psin_min 0.999
+!set qprofile_psin_max 1
+!for step xxxxxx do
+!    qprofile append
+!done
+
+set_postproc_dir postproc_inner_reduced
+set surfaces 200
+set rad_range_min 0.001
+set rad_range_max 0.999
+set qprofile_psin_min 0
+set qprofile_psin_max 1
+set nsmallsteps 3
+set nmaxsteps 2500
+
+set linepoints 400
+expressions R ne T_i T_e pres FFprime_loc VXBt VXBt_all Jtor etaJt etaSJt etaJminusSJt VXBt00 VXBt_R2 VXBt_all_R2 VXBt00_R2 etaJt_R2 etaSJt_R2 etaJminSJ_R2 gradPsi2 lapPsi rho_comprs rho_convect rho_diffus rho_source myVnablaV_r myDiv_BB_r myNablaB2_r myGradP_r myViscTerm_r myJxB_r JxB_radial V_radial JpolxBtor_r JtorxBpol_r VXB_para VXB_para_all etaJSJ_para eta_T Fprofile
+mark_coords 1
+for step xxxxxx do
+    midplane
+done
+
+
+ for step xxxxxx do
+    find_q_surface -1.0
+    find_q_surface -1.1
+ done
+
+
+
+
+quit

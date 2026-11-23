@@ -1,0 +1,80 @@
+#!/bin/bash
+
+#SBATCH -J jorek_JET
+##SBATCH -A FUSIO_BA7MHD_C
+#SBATCH -p dcgp_fua_prod
+#SBATCH --account=FUPA2_LOWPRIO
+#SBATCH --qos=qos_fualowprio
+ 
+#SBATCH --nodes=6
+##SBATCH --cores-per-socket=128                  # 128*2 sockets
+#SBATCH --ntasks-per-node=16                   # number of tasks per node
+#SBATCH --cpus-per-task=16                     # 16 threads per rank; 256 cores per node
+ 
+#SBATCH --mem=750000                           # memory per node
+ 
+#SBATCH --time=08:00:00
+#SBATCH --signal=B:USR1@300
+#SBATCH --output=./%x.%j.out
+#SBATCH --error=./%x.%j.err
+ 
+ 
+### Request e-mail notification
+#SBATCH --mail-type=FAIL   # can be BEGIN, END, TIME_LIMIT, FAIL, ALL, NONE
+#SBATCH --mail-user=hazh@ipp.mpg.de
+
+set -eo pipefail
+
+module purge
+module load intel-oneapi-mpi/2021.12.1
+module load intel-oneapi-compilers/2024.1.0
+module load intel-oneapi-mkl/2024.0.0--intel-oneapi-mpi--2021.12.1
+module load hdf5/1.14.3--intel-oneapi-mpi--2021.12.1--oneapi--2024.1.0
+module load cintools/1.0
+
+#unset UCX_TLS
+#export FI_PROVIDER=tcp
+
+# export I_MPI_FABRICS=shm:tcp
+# (Note: the old fix I_MPI_FABRICS=shm:tcp is no longer valid in this MPI.)
+# MPI communication
+export I_MPI_FABRICS=shm:ofi
+export FI_PROVIDER=mlx
+export I_MPI_OFI_PROVIDER=mlx
+export UCX_TLS=self,mm,dc_mlx5
+
+# Main-thread and OpenMP stacks
+ulimit -s unlimited
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_STACKSIZE=1G
+
+# Thread placement used in the successful tests
+export OMP_PLACES=cores
+export OMP_PROC_BIND=close
+
+executable_bindary=jorek_model711_17_1_64
+input_namelist=input
+
+cp $input_namelist "$input_namelist.$SLURM_JOB_ID"
+
+# Slurm sends USR1 before the actual walltime, including sbatch --time overrides.
+# Run the pipeline in the background so bash can handle the warning immediately.
+walltime_warning=0
+trap 'walltime_warning=1; echo "Walltime warning: requesting a clean JOREK stop"; touch STOP_NOW' USR1
+srun --kill-on-bad-exit=1 --cpu-bind=cores \
+  ./$executable_bindary < "$input_namelist.$SLURM_JOB_ID" | tee logfile &
+launcher=$!
+
+# A signal interrupts wait; resume waiting so JOREK can finish its clean stop.
+# Otherwise propagate the pipeline status, including an srun failure through tee.
+while true; do
+    walltime_warning=0
+    if wait "$launcher"; then
+        exit 0
+    else
+        status=$?
+    fi
+    if (( walltime_warning == 0 )); then
+        exit "$status"
+    fi
+done
