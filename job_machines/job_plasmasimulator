@@ -19,6 +19,11 @@ cd ${PBS_O_WORKDIR}
 #export I_MPI_DEBUG=4
 export I_MPI_OFI_PROVIDER=psm3
 
+# Main-thread and OpenMP stacks
+ulimit -s unlimited
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_STACKSIZE=1G
+
 
 # Extract time from PBS script ("$0" => this)
 # Note: PBS walltime is typically in HH:MM:SS format
