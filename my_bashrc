@@ -1304,13 +1304,16 @@ title_xterm() {
     fi
 }
 
+alias rm_non_hundred_h5='mv jorek????[1-9]?.h5 jorek?????[1-9].h5 ~/Trash/'
+alias slurm_rank='sreport user TopUsage Start=$(date -d '30 days ago' +%Y-%m-%d) End=now TopCount=100 -t Hours'
 
 export u0=1.2566370614359173e-06      # u0 vacuum magnetic permeability
 export one_over_u0=795774.7154594767  # 1/u0
+export PYTHONSTARTUP=$HOME/scripts/.pythonrc
+export JOREK_BASHRC="$HOME/scripts/my_bashrc"
 
 # Usage example:
 # update_slurm_time 12345 03:00:00
-
 
 # useful commands
 # plot_energetic_particle_density.py part_restart_000000.h5 part_restart_000100.h5 --groups EPD --radial-coordinate sqrt-psi-p --radial-bins 20
@@ -1334,6 +1337,3 @@ export one_over_u0=795774.7154594767  # 1/u0
 # plot_poincare_all.py poincares/poinc_R-Z_s??????.dat -tm $time2si -cful True -png True
 # grep min,max deltas logfile # to check the delta values of val vec for each step, if it is too large, consider reducing the timestep
 # convert2vtk.sh -si -only 500 -j 8 ./jorek2vtk input
-export PYTHONSTARTUP=$HOME/scripts/.pythonrc
-alias rm_non_hundred_h5='mv jorek????[1-9]?.h5 jorek?????[1-9].h5 ~/Trash/'
-export JOREK_BASHRC="$HOME/scripts/my_bashrc"
