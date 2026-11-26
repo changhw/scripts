@@ -1305,7 +1305,7 @@ title_xterm() {
 }
 
 alias rm_non_hundred_h5='mv jorek????[1-9]?.h5 jorek?????[1-9].h5 ~/Trash/'
-alias slurm_rank='sreport user TopUsage Start=$(date -d '30 days ago' +%Y-%m-%d) End=now TopCount=100 -t Hours'
+alias slurm_rank="sreport user TopUsage Start=$(date -d '30 days ago' +%Y-%m-%d) End=now TopCount=100 -t Hours"
 
 export u0=1.2566370614359173e-06      # u0 vacuum magnetic permeability
 export one_over_u0=795774.7154594767  # 1/u0
